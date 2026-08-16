@@ -38,27 +38,14 @@ func WriteData(w http.ResponseWriter, status int, data any) {
 	Write(w, status, &envelope{Data: data})
 }
 
-func WriteError(w http.ResponseWriter, status int, err any) {
-	var errors []string
-
-	switch e := err.(type) {
-	case error:
-		errors = append(errors, e.Error())
-	case string:
-		errors = append(errors, e)
-	case []string:
-		errors = e
-	default:
-		msg := fmt.Sprintf("%v", err)
-		if msg == "<nil>" || msg == "" {
-			msg = "an error occured"
-		}
-		errors = append(errors, msg)
-	}
-
+func WriteErrors(w http.ResponseWriter, status int, msgs []string) {
 	type envelope struct {
-		Error string `json:"error"`
+		Errors []string `json:"errors"`
 	}
 
-	Write(w, status, &envelope{Error: errors[0]})
+	Write(w, status, &envelope{Errors: msgs})
+}
+
+func WriteError(w http.ResponseWriter, status int, msg string) {
+	WriteErrors(w, status, []string{msg})
 }

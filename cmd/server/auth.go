@@ -29,14 +29,14 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 
 	var payload RegisterUserPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	payload.Email = strings.ToLower(payload.Email)
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
@@ -116,14 +116,14 @@ func (a *application) loginUser(w http.ResponseWriter, r *http.Request) {
 
 	var payload LoginUserPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	payload.Email = strings.ToLower(payload.Email)
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
@@ -269,12 +269,12 @@ func (a *application) verifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	var payload VerifyEmailPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
@@ -339,14 +339,14 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 
 	var payload ResendVerificationPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	payload.Email = strings.ToLower(payload.Email)
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
@@ -444,14 +444,14 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	var payload ForgotPasswordPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	payload.Email = strings.ToLower(payload.Email)
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
@@ -545,12 +545,12 @@ func (a *application) resetPassword(w http.ResponseWriter, r *http.Request) {
 
 	var payload ResetPasswordPayload
 	if err := jsonutil.Read(w, r, &payload); err != nil {
-		jsonutil.WriteError(w, http.StatusBadRequest, err)
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
-		jsonutil.WriteError(w, http.StatusUnprocessableEntity, errs)
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
 		return
 	}
 
