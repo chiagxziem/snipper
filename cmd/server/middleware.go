@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/goziemsunday/gater/internal/auth"
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/store"
@@ -104,6 +106,46 @@ func (a *application) maybeAuth(next http.Handler) http.Handler {
 
 		ctx := context.WithValue(r.Context(), userCtx, user)
 		ctx = context.WithValue(ctx, sessionCtx, session)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requireEventOrganizer checks that the authenticated user owns the event in
+// the {id} route param, then loads the event into the context;
+// must be used after requireAuth so the user is already in the context
+func (a *application) requireEventOrganizer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := r.Context().Value(userCtx).(*store.User)
+		if !ok {
+			jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+			return
+		}
+
+		eventID := chi.URLParam(r, "id")
+
+		// ensure the {id} route param is a real UUID before hitting the DB
+		if _, err := uuid.Parse(eventID); err != nil {
+			jsonutil.WriteError(w, http.StatusBadRequest, "invalid event id")
+			return
+		}
+
+		event, err := a.store.Events.GetByID(r.Context(), eventID)
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				jsonutil.WriteError(w, http.StatusNotFound, "event not found")
+			default:
+				jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+			}
+			return
+		}
+
+		if user.ID != event.OrganizerID {
+			jsonutil.WriteError(w, http.StatusForbidden, "event does not belong to current user")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), eventCtx, event)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

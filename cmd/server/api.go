@@ -34,6 +34,7 @@ const (
 	userCtx    contextKey = "user"
 	sessionCtx contextKey = "session"
 	loggerCtx  contextKey = "logger"
+	eventCtx   contextKey = "event"
 )
 
 func (a *application) mount() http.Handler {
@@ -113,6 +114,12 @@ func (a *application) mount() http.Handler {
 				r.Use(a.requireOrganizer)
 
 				r.Post("/", a.createEvent)
+
+				// event-scoped routes: ownership is checked by requireEventOrganizer
+				r.Group(func(r chi.Router) {
+					r.Use(a.requireEventOrganizer)
+					r.Patch("/{id}", a.updateEvent)
+				})
 			})
 		})
 	})

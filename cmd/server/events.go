@@ -95,6 +95,121 @@ func (a *application) createEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type UpdateEventPayload struct {
+	Name                    *string    `json:"name" validate:"omitempty,max=255"`
+	Description             *string    `json:"description"`
+	Location                *string    `json:"location" validate:"omitempty,max=255"`
+	StartsAt                *time.Time `json:"starts_at"`
+	EndsAt                  *time.Time `json:"ends_at"`
+	Capacity                *int       `json:"capacity" validate:"omitempty,gte=1"`
+	CancellationAllowed     *bool      `json:"cancellation_allowed"`
+	CancellationHoursBefore *int       `json:"cancellation_hours_before" validate:"omitempty,gte=0"`
+	MaxTicketsPerPurchase   *int       `json:"max_tickets_per_purchase" validate:"omitempty,gte=1"`
+	ConfirmMaterialChange   *bool      `json:"confirm_material_change"`
+}
+
+func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "event not found in context")
+		return
+	}
+
+	var payload UpdateEventPayload
+	if err := jsonutil.Read(w, r, &payload); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if errs, ok := a.validator.ValidateStruct(&payload); !ok {
+		jsonutil.WriteErrors(w, http.StatusUnprocessableEntity, errs)
+		return
+	}
+
+	// merge the non-nil fields onto the current event; material fields are
+	// tracked so the published-event gate can reject them without confirmation
+	changedMaterial := false
+
+	if payload.Name != nil {
+		event.Name = *payload.Name
+	}
+	if payload.Description != nil {
+		event.Description = payload.Description
+	}
+	if payload.Location != nil {
+		changedMaterial = true
+		event.Location = *payload.Location
+	}
+	if payload.StartsAt != nil {
+		changedMaterial = true
+		event.StartsAt = *payload.StartsAt
+	}
+	if payload.EndsAt != nil {
+		changedMaterial = true
+		event.EndsAt = *payload.EndsAt
+	}
+	if payload.Capacity != nil {
+		// TODO (Phase 9): reject if the new capacity is below tickets already sold
+		event.Capacity = payload.Capacity
+	}
+	if payload.CancellationAllowed != nil {
+		changedMaterial = true
+		event.CancellationAllowed = *payload.CancellationAllowed
+	}
+	if payload.CancellationHoursBefore != nil {
+		changedMaterial = true
+		event.CancellationHoursBefore = *payload.CancellationHoursBefore
+	}
+	if payload.MaxTicketsPerPurchase != nil {
+		event.MaxTicketsPerPurchase = *payload.MaxTicketsPerPurchase
+	}
+
+	// ends_at must stay after starts_at once the merge is applied
+	if !event.EndsAt.After(event.StartsAt) {
+		jsonutil.WriteError(w, http.StatusUnprocessableEntity, "ends_at must be after starts_at")
+		return
+	}
+
+	switch event.Status {
+	case "draft":
+		// drafts have no buyers; every field is freely editable
+	case "published", "sold_out":
+		// material changes require explicit confirmation; without it, reject
+		if changedMaterial && (payload.ConfirmMaterialChange == nil || !*payload.ConfirmMaterialChange) {
+			// TODO (Phase 9): include the number of confirmed ticket holders affected
+			jsonutil.WriteError(w, http.StatusConflict,
+				"this change affects confirmed ticket holders; pass confirm_material_change: true to proceed")
+			return
+		}
+
+		// TODO (Phase 9): open a grace-period cancellation window for affected buyers
+		// TODO (Phase 12): enqueue buyer notification with a diff of the changed fields
+	default: // cancelled, ended
+		jsonutil.WriteError(w, http.StatusConflict, "event can no longer be updated")
+		return
+	}
+
+	if err := a.store.Events.Update(ctx, event); err != nil {
+		logger.Error("failed to update event", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message string       `json:"message"`
+		Event   *store.Event `json:"event"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "event updated successfully",
+		Event:   event,
+	})
+}
+
 func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 	// runs behind maybeAuth, so a guest gets nil user from the context
 

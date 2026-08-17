@@ -67,6 +67,38 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
 	return nil
 }
 
+func (s *EventsStore) Update(ctx context.Context, event *Event) error {
+	query := `
+    UPDATE events
+    SET name = $2, description = $3, location = $4, starts_at = $5,
+    ends_at = $6, capacity = $7, cancellation_allowed = $8,
+    cancellation_hours_before = $9, max_tickets_per_purchase = $10
+    WHERE id = $1
+    RETURNING id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	err := s.pool.QueryRow(
+		ctx, query, event.ID, event.Name, event.Description, event.Location,
+		event.StartsAt, event.EndsAt, event.Capacity, event.CancellationAllowed,
+		event.CancellationHoursBefore, event.MaxTicketsPerPurchase,
+	).Scan(
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
+		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
+		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("store: update event: %w", err)
+	}
+
+	return nil
+}
+
 func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,

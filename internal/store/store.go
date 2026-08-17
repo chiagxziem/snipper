@@ -52,6 +52,7 @@ type Store struct {
 		GetAllPublished(ctx context.Context, cursor *cursor.Cursor, limit int) ([]*Event, error)
 		GetByID(ctx context.Context, id string) (*Event, error)
 		Create(ctx context.Context, event *Event) error
+		Update(ctx context.Context, event *Event) error
 	}
 }
 
