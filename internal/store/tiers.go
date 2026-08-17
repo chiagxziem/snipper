@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -47,6 +48,32 @@ func (s *TiersStore) Create(ctx context.Context, tier *Tier) error {
 	}
 
 	return nil
+}
+
+func (s *TiersStore) ListByEvent(ctx context.Context, eventID string) ([]*Tier, error) {
+	query := `
+    SELECT id, event_id, name, price, quantity, remaining, status,
+    created_at, updated_at
+    FROM ticket_tiers
+    WHERE event_id = $1
+    ORDER BY created_at ASC
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list tiers by event: %w", err)
+	}
+	defer rows.Close()
+
+	tiers, err := pgx.CollectRows(rows, pgx.RowToAddrOf[Tier])
+	if err != nil {
+		return nil, fmt.Errorf("store: collect tiers by event: %w", err)
+	}
+
+	return tiers, nil
 }
 
 func (s *TiersStore) SumQuantityByEvent(ctx context.Context, eventID string) (int, error) {

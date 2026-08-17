@@ -314,9 +314,11 @@ func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
-	// runs behind maybeAuth, so a guest gets nil user from the context
-
+// publicEvent loads the event in {id} for a public route and enforces strict
+// visibility: draft/cancelled events are only visible to their organizer,
+// everyone else gets a 404 so their existence isn't leaked. Runs behind
+// maybeAuth.
+func (a *application) publicEvent(w http.ResponseWriter, r *http.Request) *store.Event {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
@@ -324,7 +326,7 @@ func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(idParam); err != nil {
 		jsonutil.WriteError(w, http.StatusBadRequest, "invalid event id")
-		return
+		return nil
 	}
 
 	event, err := a.store.Events.GetByID(ctx, idParam)
@@ -336,18 +338,29 @@ func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 			logger.Error("failed to get event", "error", err, "event_id", idParam)
 			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		}
-		return
+		return nil
 	}
 
-	// unpublished events are hidden from everyone but the organizer
+	// unpublished events are hidden from everyone but the organizer;
 	// the user was optionally resolved by maybeAuth
 	user, _ := ctx.Value(userCtx).(*store.User)
 
 	if event.Status != "published" && event.Status != "sold_out" && event.Status != "ended" {
 		if user == nil || user.ID != event.OrganizerID {
 			jsonutil.WriteError(w, http.StatusNotFound, "event not found")
-			return
+			return nil
 		}
+	}
+
+	return event
+}
+
+func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
+	// runs behind maybeAuth, so a guest gets nil user from the context
+
+	event := a.publicEvent(w, r)
+	if event == nil {
+		return // error response already written in publicEvent
 	}
 
 	type returnData struct {

@@ -59,6 +59,7 @@ type Store struct {
 	}
 	Tiers interface {
 		Create(ctx context.Context, tier *Tier) error
+		ListByEvent(ctx context.Context, eventID string) ([]*Tier, error)
 		SumQuantityByEvent(ctx context.Context, eventID string) (int, error)
 	}
 }

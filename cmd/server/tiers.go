@@ -14,6 +14,32 @@ type CreateTierPayload struct {
 	Quantity *int   `json:"quantity" validate:"omitempty,gt=0"`
 }
 
+func (a *application) listTiers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	event := a.publicEvent(w, r)
+	if event == nil {
+		return // error response already written in publicEvent
+	}
+
+	tiers, err := a.store.Tiers.ListByEvent(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to list tiers", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message string        `json:"message"`
+		Tiers   []*store.Tier `json:"tiers"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "tiers retrieved successfully",
+		Tiers:   tiers,
+	})
+}
+
 func (a *application) createTier(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)

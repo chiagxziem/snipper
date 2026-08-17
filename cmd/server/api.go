@@ -104,11 +104,12 @@ func (a *application) mount() http.Handler {
 		r.Route("/events", func(r chi.Router) {
 			r.Get("/", a.getPublishedEvents)
 
-			// public event routes; maybeAuth lets the handlers recognize
-			// the organizer so drafts stay private to them
+			// public event routes: recognize the organizer using maybeAuth
 			r.Group(func(r chi.Router) {
 				r.Use(a.maybeAuth)
+
 				r.Get("/{id}", a.getEvent)
+				r.Get("/{id}/tiers", a.listTiers)
 			})
 
 			// protected events routes
