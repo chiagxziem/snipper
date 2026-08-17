@@ -66,7 +66,7 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
 	return nil
 }
 
-func (s EventsStore) GetPublished(
+func (s EventsStore) GetAllPublished(
 	ctx context.Context,
 	cursor *cursor.Cursor,
 	limit int,

@@ -49,7 +49,7 @@ type Store struct {
 		Create(ctx context.Context, account *OAuthAccount) error
 	}
 	Events interface {
-		GetPublished(ctx context.Context, cursor *cursor.Cursor, limit int) ([]*Event, error)
+		GetAllPublished(ctx context.Context, cursor *cursor.Cursor, limit int) ([]*Event, error)
 		Create(ctx context.Context, event *Event) error
 	}
 }

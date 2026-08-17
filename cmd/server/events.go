@@ -114,7 +114,7 @@ func (a *application) getPublishedEvents(w http.ResponseWriter, r *http.Request)
 	}
 
 	// get events up to limit + 1 to ensure there's a next page
-	events, err := a.store.Events.GetPublished(ctx, cur, limit+1)
+	events, err := a.store.Events.GetAllPublished(ctx, cur, limit+1)
 	if err != nil {
 		logger.Error("failed to get published events", "error", err)
 		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
