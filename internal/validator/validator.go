@@ -38,6 +38,14 @@ func (v *playgroundValidator) ValidateStruct(s any) ([]string, bool) {
 			errMsgs = append(errMsgs, field+" is required")
 		case "email":
 			errMsgs = append(errMsgs, "invalid email format")
+		case "gte":
+			errMsgs = append(errMsgs, field+" must be at least "+param)
+		case "gt":
+			errMsgs = append(errMsgs, field+" must be greater than "+param)
+		case "lte":
+			errMsgs = append(errMsgs, field+" must not be more than "+param)
+		case "lt":
+			errMsgs = append(errMsgs, field+" must be less than "+param)
 		case "hexadecimal":
 			errMsgs = append(errMsgs, field+" must be a valid hex string")
 		case "min":
