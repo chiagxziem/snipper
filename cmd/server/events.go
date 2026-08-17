@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/goziemsunday/gater/internal/cursor"
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/store"
@@ -88,6 +91,52 @@ func (a *application) createEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonutil.WriteData(w, http.StatusCreated, returnData{
 		Message: "event created successfully",
+		Event:   event,
+	})
+}
+
+func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
+	// runs behind maybeAuth, so a guest gets nil user from the context
+
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// ensure the {id} route param is a real UUID
+	idParam := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(idParam); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+
+	event, err := a.store.Events.GetByID(ctx, idParam)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			jsonutil.WriteError(w, http.StatusNotFound, "event not found")
+		default:
+			logger.Error("failed to get event", "error", err, "event_id", idParam)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		}
+		return
+	}
+
+	// unpublished events are hidden from everyone but the organizer;
+	// 404 instead of 403 so their existence isn't leaked to guests
+	_, user, _ := a.authenticate(r)
+
+	if event.Status != "published" && event.Status != "sold_out" && event.Status != "ended" {
+		if user == nil || user.ID != event.OrganizerID {
+			jsonutil.WriteError(w, http.StatusNotFound, "event not found")
+			return
+		}
+	}
+
+	type returnData struct {
+		Message string       `json:"message"`
+		Event   *store.Event `json:"event"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "event retrieved successfully",
 		Event:   event,
 	})
 }

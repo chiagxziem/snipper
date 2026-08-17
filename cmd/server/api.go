@@ -103,6 +103,10 @@ func (a *application) mount() http.Handler {
 		r.Route("/events", func(r chi.Router) {
 			r.Get("/", a.getPublishedEvents)
 
+			// `Get getEvent` is public, but it identifies the requester
+			// inline so drafts stay private to their organizer
+			r.Get("/{id}", a.getEvent)
+
 			// protected events routes
 			r.Group(func(r chi.Router) {
 				r.Use(a.requireAuth)

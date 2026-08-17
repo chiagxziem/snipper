@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -64,6 +65,38 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
 	}
 
 	return nil
+}
+
+func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
+	query := `
+    SELECT id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, created_at, updated_at
+    FROM events
+    WHERE id = $1
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	event := &Event{}
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
+		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
+		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, fmt.Errorf("store: get event by id: %w", ErrNotFound)
+		default:
+			return nil, fmt.Errorf("store: get event by id: %w", err)
+		}
+	}
+
+	return event, nil
 }
 
 func (s EventsStore) GetAllPublished(
