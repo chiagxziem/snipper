@@ -118,7 +118,9 @@ func (a *application) mount() http.Handler {
 				// event-scoped routes: ownership is checked by requireEventOrganizer
 				r.Group(func(r chi.Router) {
 					r.Use(a.requireEventOrganizer)
+
 					r.Patch("/{id}", a.updateEvent)
+					r.Delete("/{id}", a.deleteEvent)
 				})
 			})
 		})

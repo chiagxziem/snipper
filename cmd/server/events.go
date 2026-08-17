@@ -210,6 +210,37 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *application) deleteEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "event not found in context")
+		return
+	}
+
+	if event.Status != "draft" {
+		jsonutil.WriteError(w, http.StatusConflict, "event can only be deleted while in draft")
+		return
+	}
+
+	if err := a.store.Events.Delete(ctx, event.ID.String()); err != nil {
+		logger.Error("failed to delete event", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message string `json:"message"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "event deleted successfully",
+	})
+}
+
 func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 	// runs behind maybeAuth, so a guest gets nil user from the context
 

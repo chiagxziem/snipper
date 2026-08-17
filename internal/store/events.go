@@ -99,6 +99,26 @@ func (s *EventsStore) Update(ctx context.Context, event *Event) error {
 	return nil
 }
 
+func (s *EventsStore) Delete(ctx context.Context, id string) error {
+	query := `
+    DELETE FROM events
+    WHERE id = $1
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	ct, err := s.pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("store: delete event: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("store: delete event: %w", ErrNotFound)
+	}
+
+	return nil
+}
+
 func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,
