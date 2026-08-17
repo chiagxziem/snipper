@@ -339,9 +339,9 @@ func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// unpublished events are hidden from everyone but the organizer;
-	// 404 instead of 403 so their existence isn't leaked to guests
-	_, user, _ := a.authenticate(r)
+	// unpublished events are hidden from everyone but the organizer
+	// the user was optionally resolved by maybeAuth
+	user, _ := ctx.Value(userCtx).(*store.User)
 
 	if event.Status != "published" && event.Status != "sold_out" && event.Status != "ended" {
 		if user == nil || user.ID != event.OrganizerID {

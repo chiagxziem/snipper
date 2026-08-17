@@ -104,9 +104,12 @@ func (a *application) mount() http.Handler {
 		r.Route("/events", func(r chi.Router) {
 			r.Get("/", a.getPublishedEvents)
 
-			// `Get getEvent` is public, but it identifies the requester
-			// inline so drafts stay private to their organizer
-			r.Get("/{id}", a.getEvent)
+			// public event routes; maybeAuth lets the handlers recognize
+			// the organizer so drafts stay private to them
+			r.Group(func(r chi.Router) {
+				r.Use(a.maybeAuth)
+				r.Get("/{id}", a.getEvent)
+			})
 
 			// protected events routes
 			r.Group(func(r chi.Router) {
@@ -123,6 +126,11 @@ func (a *application) mount() http.Handler {
 					r.Delete("/{id}", a.deleteEvent)
 					r.Post("/{id}/publish", a.publishEvent)
 					r.Post("/{id}/cancel", a.cancelEvent)
+
+					// tiers
+					r.Group(func(r chi.Router) {
+						r.Post("/{id}/tiers", a.createTier)
+					})
 				})
 			})
 		})

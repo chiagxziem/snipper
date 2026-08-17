@@ -57,6 +57,10 @@ type Store struct {
 		Publish(ctx context.Context, id string) (*Event, error)
 		Cancel(ctx context.Context, id string) (*Event, error)
 	}
+	Tiers interface {
+		Create(ctx context.Context, tier *Tier) error
+		SumQuantityByEvent(ctx context.Context, eventID string) (int, error)
+	}
 }
 
 func New(pool *pgxpool.Pool) Store {
@@ -66,5 +70,6 @@ func New(pool *pgxpool.Pool) Store {
 		Verifications: &VerificationStore{pool},
 		OAuthAccounts: &OAuthStore{pool},
 		Events:        &EventsStore{pool},
+		Tiers:         &TiersStore{pool},
 	}
 }
