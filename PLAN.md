@@ -55,16 +55,16 @@
 
 ### Events — `/api/events`
 
-| Method   | Path                         | Auth      | Description                           |
-| -------- | ---------------------------- | --------- | ------------------------------------- |
-| `POST`   | `/api/events`                | Organizer | Create an event                       |
-| `GET`    | `/api/events`                | Public    | List all published events (paginated) |
-| `GET`    | `/api/events/{id}`           | Public    | Get a single event's details          |
-| `PATCH`  | `/api/events/{id}`           | Organizer | Update an event (draft only)          |
-| `DELETE` | `/api/events/{id}`           | Organizer | Delete an event (draft only)          |
-| `POST`   | `/api/events/{id}/publish`   | Organizer | Publish an event                      |
-| `POST`   | `/api/events/{id}/cancel`    | Organizer | Cancel an event                       |
-| `GET`    | `/api/events/{id}/analytics` | Organizer | Get check-in + purchase analytics     |
+| Method   | Path                         | Auth      | Description                                   |
+| -------- | ---------------------------- | --------- | --------------------------------------------- |
+| `POST`   | `/api/events`                | Organizer | Create an event                               |
+| `GET`    | `/api/events`                | Public    | List all published events (paginated)         |
+| `GET`    | `/api/events/{id}`           | Public    | Get a single event's details (drafts private) |
+| `PATCH`  | `/api/events/{id}`           | Organizer | Update an event (ownership)                   |
+| `DELETE` | `/api/events/{id}`           | Organizer | Delete an event (draft only)                  |
+| `POST`   | `/api/events/{id}/publish`   | Organizer | Publish an event                              |
+| `POST`   | `/api/events/{id}/cancel`    | Organizer | Cancel an event                               |
+| `GET`    | `/api/events/{id}/analytics` | Organizer | Get check-in + purchase analytics             |
 
 **Create request:**
 
@@ -117,12 +117,22 @@ Draft      → Published  (manual, organizer)
 Draft      → Cancelled  (manual, organizer)
 Published  → Cancelled  (manual, organizer)
 Published  → Sold Out   (automatic, triggered by inventory)
+Sold Out   → Cancelled  (manual, organizer)
 Sold Out   → Published  (automatic, triggered by cancellation freeing inventory)
 Published  → Ended      (automatic, triggered by event date passing)
 Sold Out   → Ended      (automatic, triggered by event date passing)
 ```
 
 Invalid transitions are rejected with a `409 Conflict`.
+
+**Visibility (implemented):** draft/cancelled events return `404` to non-organizers (no existence leak). Handlers running behind `maybeAuth` recognize the organizer via `publicEvent`.
+
+**Update policy (implemented):**
+
+- Draft events: fully editable.
+- Published / sold_out: material fields (`starts_at`, `ends_at`, `location`, `cancellation_allowed`, `cancellation_hours_before`) require `confirm_material_change: true` in the request, else `409`. Capacity cannot be lowered below tickets sold (Phase 9 wiring). Name, description, `max_tickets_per_purchase` editable anytime.
+- Cancelled / ended: frozen, `409`.
+- Publish requires at least one tier (Phase 8 wiring).
 
 ### Ticket Tiers — `/api/events/{id}/tiers`
 
@@ -132,6 +142,10 @@ Invalid transitions are rejected with a `409 Conflict`.
 | `GET`    | `/api/events/{id}/tiers`          | Public    | List tiers for an event    |
 | `PATCH`  | `/api/events/{id}/tiers/{tierId}` | Organizer | Update a tier (draft only) |
 | `DELETE` | `/api/events/{id}/tiers/{tierId}` | Organizer | Delete a tier (draft only) |
+
+**Status (implemented):** `POST` (create) and `GET` (list) are done. Create/list run behind `maybeAuth` — tier listings follow the same draft/cancelled visibility rule as events. Update/delete are pending.
+
+**Tier update rules (pending):** management is locked to draft events (`409` otherwise); on update, `quantity` must not drop below `remaining` (422); capacity check nets out the tier's old quantity.
 
 **Create tier request:**
 
@@ -494,7 +508,7 @@ CREATE INDEX idx_waitlist_entries_created_at ON waitlist_entries(created_at);
 
 ---
 
-## Project Structurestruct
+## Project Structure
 
 ```
 gater/
@@ -505,13 +519,13 @@ gater/
 │   │   ├── auth.go          -- register, login, logout, verifyEmail, resendVerification, forgotPassword, resetPassword, google, googleCallback
 │   │   ├── users.go         -- getUser, becomeOrganizer
 │   │   ├── health.go        -- checkHealth
-│   │   ├── events.go        -- stub
-│   │   ├── tiers.go         -- stub
+│   │   ├── events.go        -- event handlers: createEvent, getEvent, updateEvent, deleteEvent, publishEvent, cancelEvent, getPublishedEvents, publicEvent
+│   │   ├── tiers.go         -- createTier, listTiers implemented; update/delete pending
 │   │   ├── purchases.go     -- stub
 │   │   ├── waitlist.go      -- stub
 │   │   ├── check-in.go      -- stub
 │   │   ├── analytics.go     -- stub
-│   │   ├── middleware.go    -- requireAuth (Bearer first, cookie fallback), injectLogging
+│   │   ├── middleware.go    -- authenticate (shared core), requireAuth, maybeAuth, requireOrganizer, requireEventOrganizer, injectLogging
 │   │   └── docs.go          -- scalarDocs, openAPISpec (planned)
 │   └── migrate/
 │       └── main.go          -- goose migration runner
@@ -540,8 +554,8 @@ gater/
 │   │   ├── sessions.go      -- SessionStore + session queries
 │   │   ├── verifications.go -- VerificationStore + verification queries
 │   │   ├── oauth.go         -- OAuthStore + oauth account queries
-│   │   ├── events.go        -- EventStore (planned)
-│   │   ├── tiers.go         -- TierStore (planned)
+│   │   ├── events.go        -- EventsStore + event queries
+│   │   ├── tiers.go         -- TiersStore + tier queries
 │   │   ├── purchases.go     -- PurchaseStore (planned)
 │   │   ├── tickets.go       -- TicketStore (planned)
 │   │   └── waitlist.go      -- WaitlistStore (planned)
@@ -683,7 +697,7 @@ volumes:
 
 ## Phases
 
-### Phase 1 — Project Scaffolding
+### Phase 1 — Project Scaffolding ✅
 
 - Initialize Go module at repo root (`go mod init github.com/chiagoziem/gater`)
 - Create full folder structure (`cmd/`, `internal/`, `migrations/`, `requests/`)
@@ -693,7 +707,7 @@ volumes:
 - Set up Air with `.air.toml`
 - Set up `README.md`
 
-### Phase 2 — Database & Migrations
+### Phase 2 — Database & Migrations ✅
 
 - Set up `pgx` pool in `internal/db/db.go`
 - Set up `goose/v3` as the migration runner in `cmd/migrate/main.go` (embedded `//go:embed migrations/*.sql`)
@@ -710,7 +724,7 @@ volumes:
   - `00010_create_waitlist_entries_table.sql`
 - Verify migrations run cleanly against local Postgres
 
-### Phase 3 — Config & Server Skeleton
+### Phase 3 — Config & Server Skeleton ✅
 
 - Write `internal/config/config.go` — load all env vars, fail fast on missing required ones
 - Wire up `cmd/server/main.go` — load config, init DB, init mailer, init validator, wire `application`, call `run()`
@@ -719,7 +733,7 @@ volumes:
 - Implement `run()` with graceful shutdown (`SIGINT`/`SIGTERM`)
 - Verify server starts and all routes respond
 
-### Phase 4 — Store Layer
+### Phase 4 — Store Layer ✅
 
 - Define `Store` struct with per-domain interfaces in `internal/store/store.go`
 - Implement store methods across `users.go`, `sessions.go`, `verifications.go`, `oauth.go`
@@ -748,18 +762,21 @@ volumes:
 - OAuth state validated via signed cookie (`gater_oauth_state`, 10 min expiry)
 - Existing unverified email/password users get auto-verified on first Google login
 
-### Phase 7 — Events
+### Phase 7 — Events ✅
 
-- Implement event handlers: `createEvent`, `listEvents`, `getEvent`, `updateEvent`, `deleteEvent`
+- Implement event handlers: `createEvent`, `listEvents` (`getPublishedEvents`), `getEvent`, `updateEvent`, `deleteEvent`
 - Implement `publishEvent` and `cancelEvent` with state machine validation
 - `requireOrganizer` middleware — checks user role is `organizer`
 - `requireEventOrganizer` middleware — checks the authenticated user owns the event
+- Update policy: material fields require `confirm_material_change`, cancelled/ended events frozen, draft-only delete
+- Draft/cancelled events hidden from non-organizers (`publicEvent`, `maybeAuth`)
 
-### Phase 8 — Ticket Tiers
+### Phase 8 — Ticket Tiers (in progress)
 
-- Implement tier handlers: `createTier`, `listTiers`, `updateTier`, `deleteTier`
+- Implement tier handlers: `createTier` ✅, `listTiers` ✅, `updateTier`, `deleteTier`
 - Capacity validation on create/update — sum of tier quantities must not exceed event capacity
 - Tier management locked to draft events only
+- Publish gate: reject publish when the event has no tiers
 
 ### Phase 9 — Purchases + Tickets
 
@@ -927,4 +944,24 @@ if event.Capacity != nil && existingTotal + newQuantity > *event.Capacity {
             existingTotal + newQuantity, *event.Capacity))
     return
 }
+```
+
+---
+
+## Backlog
+
+Ideas we deliberately deferred. Not on the roadmap, but not forgotten.
+
+### Custom tier ordering
+
+Currently tiers are listed in `created_at` order. To let organizers control order (e.g. pin VIP/first-access tiers first):
+
+- Add a `sort_order` column to `ticket_tiers` (new migration, `INTEGER NOT NULL DEFAULT 0`)
+- Order listings by `sort_order, created_at`
+- Expose `sort_order` as a PATCH-able field on tier updates (or a dedicated reorder endpoint)
+
+Explicit position is preferred over inferring order from `price`, since multiple tiers can share a price.
+
+```
+
 ```
