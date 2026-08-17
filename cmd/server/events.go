@@ -34,7 +34,7 @@ func (a *application) createEvent(w http.ResponseWriter, r *http.Request) {
 	user, ok := ctx.Value(userCtx).(*store.User)
 	if !ok {
 		logger.Error("failed to get user from context")
-		jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 
@@ -116,7 +116,7 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 	event, ok := ctx.Value(eventCtx).(*store.Event)
 	if !ok {
 		logger.Error("failed to get event from context")
-		jsonutil.WriteError(w, http.StatusInternalServerError, "event not found in context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 
@@ -218,7 +218,7 @@ func (a *application) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	event, ok := ctx.Value(eventCtx).(*store.Event)
 	if !ok {
 		logger.Error("failed to get event from context")
-		jsonutil.WriteError(w, http.StatusInternalServerError, "event not found in context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 

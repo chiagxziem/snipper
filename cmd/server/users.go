@@ -14,7 +14,7 @@ func (a *application) getUser(w http.ResponseWriter, r *http.Request) {
 	user, ok := ctx.Value(userCtx).(*store.User)
 	if !ok {
 		logger.Error("failed to get user from context")
-		jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 
@@ -31,7 +31,7 @@ func (a *application) becomeOrganizer(w http.ResponseWriter, r *http.Request) {
 	user, ok := ctx.Value(userCtx).(*store.User)
 	if !ok {
 		logger.Error("failed to get user from context")
-		jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
 	}
 

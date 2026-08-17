@@ -115,9 +115,12 @@ func (a *application) maybeAuth(next http.Handler) http.Handler {
 // must be used after requireAuth so the user is already in the context
 func (a *application) requireEventOrganizer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := loggerFromCtx(r.Context())
+
 		user, ok := r.Context().Value(userCtx).(*store.User)
 		if !ok {
-			jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+			logger.Error("failed to get user from context (requireEventOrganizer used without requireAuth?)")
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 			return
 		}
 
@@ -153,9 +156,12 @@ func (a *application) requireEventOrganizer(next http.Handler) http.Handler {
 // requireOrganizer must be used after requireAuth so the user is already in the context
 func (a *application) requireOrganizer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := loggerFromCtx(r.Context())
+
 		user, ok := r.Context().Value(userCtx).(*store.User)
 		if !ok {
-			jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+			logger.Error("failed to get user from context (requireOrganizer used without requireAuth?)")
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 			return
 		}
 
