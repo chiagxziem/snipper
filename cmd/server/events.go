@@ -241,6 +241,79 @@ func (a *application) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *application) publishEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	if event.Status != "draft" {
+		jsonutil.WriteError(w, http.StatusConflict, "event can only be published while in draft")
+		return
+	}
+
+	// TODO (Phase 8): require at least one ticket tier before publishing
+
+	event, err := a.store.Events.Publish(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to publish event", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message string       `json:"message"`
+		Event   *store.Event `json:"event"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "event published successfully",
+		Event:   event,
+	})
+}
+
+func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	if event.Status != "draft" && event.Status != "published" && event.Status != "sold_out" {
+		jsonutil.WriteError(w, http.StatusConflict, "event can no longer be cancelled")
+		return
+	}
+
+	// TODO (Phase 9): trigger refunds/grace-period cancellations for confirmed purchases
+	// TODO (Phase 12): enqueue buyer notification that the event was cancelled
+
+	event, err := a.store.Events.Cancel(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to cancel event", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message string       `json:"message"`
+		Event   *store.Event `json:"event"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "event cancelled successfully",
+		Event:   event,
+	})
+}
+
 func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 	// runs behind maybeAuth, so a guest gets nil user from the context
 

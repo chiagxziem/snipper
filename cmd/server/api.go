@@ -121,6 +121,8 @@ func (a *application) mount() http.Handler {
 
 					r.Patch("/{id}", a.updateEvent)
 					r.Delete("/{id}", a.deleteEvent)
+					r.Post("/{id}/publish", a.publishEvent)
+					r.Post("/{id}/cancel", a.cancelEvent)
 				})
 			})
 		})

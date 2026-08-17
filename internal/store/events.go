@@ -119,6 +119,66 @@ func (s *EventsStore) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *EventsStore) Publish(ctx context.Context, id string) (*Event, error) {
+	query := `
+    UPDATE events
+    SET status = 'published'
+    WHERE id = $1 AND status = 'draft'
+    RETURNING id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	event := &Event{}
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
+		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
+		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: publish event: %w", ErrConflict)
+		}
+		return nil, fmt.Errorf("store: publish event: %w", err)
+	}
+
+	return event, nil
+}
+
+func (s *EventsStore) Cancel(ctx context.Context, id string) (*Event, error) {
+	query := `
+    UPDATE events
+    SET status = 'cancelled'
+    WHERE id = $1 AND status IN ('draft', 'published', 'sold_out')
+    RETURNING id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	event := &Event{}
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
+		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
+		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: cancel event: %w", ErrConflict)
+		}
+		return nil, fmt.Errorf("store: cancel event: %w", err)
+	}
+
+	return event, nil
+}
+
 func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,
