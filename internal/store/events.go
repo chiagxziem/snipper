@@ -33,6 +33,39 @@ type Event struct {
 	UpdatedAt               time.Time `json:"updated_at"`
 }
 
+func (s *EventsStore) Create(ctx context.Context, event *Event) error {
+	query := `
+    INSERT INTO events (
+      organizer_id, name, description, location, starts_at, ends_at,
+      capacity, cancellation_allowed, cancellation_hours_before,
+      max_tickets_per_purchase
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	err := s.pool.QueryRow(
+		ctx, query, event.OrganizerID, event.Name, event.Description, event.Location,
+		event.StartsAt, event.EndsAt, event.Capacity, event.CancellationAllowed,
+		event.CancellationHoursBefore, event.MaxTicketsPerPurchase,
+	).Scan(
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
+		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
+		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("store: create event: %w", err)
+	}
+
+	return nil
+}
+
 func (s EventsStore) GetPublished(
 	ctx context.Context,
 	cursor *cursor.Cursor,

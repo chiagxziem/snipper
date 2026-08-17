@@ -50,6 +50,7 @@ type Store struct {
 	}
 	Events interface {
 		GetPublished(ctx context.Context, cursor *cursor.Cursor, limit int) ([]*Event, error)
+		Create(ctx context.Context, event *Event) error
 	}
 }
 

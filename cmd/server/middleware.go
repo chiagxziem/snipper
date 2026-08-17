@@ -75,6 +75,24 @@ func (a *application) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+func (a *application) requireOrganizer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// must be used after requireAuth so the user is already in the context
+		user, ok := r.Context().Value(userCtx).(*store.User)
+		if !ok {
+			jsonutil.WriteError(w, http.StatusInternalServerError, "user not found in context")
+			return
+		}
+
+		if user.Role != store.RoleOrganizer {
+			jsonutil.WriteError(w, http.StatusForbidden, "organizer role required")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (a *application) injectLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := r.Header.Get("X-Request-ID")
