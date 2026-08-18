@@ -258,9 +258,19 @@ func (a *application) publishEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO (Phase 8): require at least one ticket tier before publishing
+	// an event needs at least one tier before it can go live
+	count, err := a.store.Tiers.CountByEvent(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to count tiers", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+	if count == 0 {
+		jsonutil.WriteError(w, http.StatusConflict, "event must have at least one ticket tier before publishing")
+		return
+	}
 
-	event, err := a.store.Events.Publish(ctx, event.ID.String())
+	event, err = a.store.Events.Publish(ctx, event.ID.String())
 	if err != nil {
 		logger.Error("failed to publish event", "error", err, "event_id", event.ID)
 		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")

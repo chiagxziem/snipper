@@ -62,6 +62,8 @@ type Store struct {
 		Create(ctx context.Context, tier *Tier) error
 		GetByID(ctx context.Context, id string) (*Tier, error)
 		Update(ctx context.Context, tier *Tier) error
+		Delete(ctx context.Context, id, eventID string) error
+		CountByEvent(ctx context.Context, eventID string) (int, error)
 		ListByEvent(ctx context.Context, eventID string) ([]*Tier, error)
 		SumQuantityByEvent(ctx context.Context, eventID string) (int, error)
 	}

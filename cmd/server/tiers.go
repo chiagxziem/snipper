@@ -178,6 +178,49 @@ func (a *application) updateTier(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *application) deleteTier(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	if event.Status != "draft" {
+		jsonutil.WriteError(w, http.StatusConflict, "tiers can only be deleted from draft events")
+		return
+	}
+
+	// ensure the {tierId} route param is a real UUID
+	tierID := chi.URLParam(r, "tierId")
+	if _, err := uuid.Parse(tierID); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid tier id")
+		return
+	}
+
+	if err := a.store.Tiers.Delete(ctx, tierID, event.ID.String()); err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			jsonutil.WriteError(w, http.StatusNotFound, "tier not found")
+		default:
+			logger.Error("failed to delete tier", "error", err, "tier_id", tierID)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		}
+		return
+	}
+
+	type returnData struct {
+		Message string `json:"message"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "tier deleted successfully",
+	})
+}
+
 func (a *application) createTier(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)

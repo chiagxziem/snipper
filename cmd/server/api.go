@@ -132,6 +132,7 @@ func (a *application) mount() http.Handler {
 					r.Group(func(r chi.Router) {
 						r.Post("/{id}/tiers", a.createTier)
 						r.Patch("/{id}/tiers/{tierId}", a.updateTier)
+						r.Delete("/{id}/tiers/{tierId}", a.deleteTier)
 					})
 				})
 			})

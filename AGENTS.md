@@ -36,6 +36,7 @@ Handlers manually wired into `application` struct in `main.go` — no DI framewo
 - **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL, no transactions.
 - **Background email** uses `context.Background()`, errors only logged.
 - **Tier payloads:** `price`/`quantity` are pointers on create (omitted ≠ 0); update payloads are pointer-based so omitted fields stay unchanged.
+- **Tier updates:** `name`/`price` editable anytime (purchase totals are stored per purchase); `quantity` must stay `>= sold` (422) with `remaining` recomputed; capacity check nets out the tier's old quantity; tier `sold_out → available` and event `sold_out → published` flips on quantity increase; delete is draft-only; cancelled/ended events freeze all tier edits (409).
 
 ## Routes (`/api`)
 
@@ -55,14 +56,15 @@ POST   /api/events/{id}/publish         (organizer, draft only)
 POST   /api/events/{id}/cancel          (organizer, draft/published/sold_out)
 GET    /api/events/{id}/tiers           (public; drafts private)
 POST   /api/events/{id}/tiers           (organizer, draft only, capacity-checked)
+PATCH  /api/events/{id}/tiers/{tierId}  (organizer, ownership; quantity >= sold, sold_out flips)
+DELETE /api/events/{id}/tiers/{tierId}  (organizer, draft only)
 ```
 
 ## Implemented vs stubs
 
 | File                                                                                  | Status      |
 | ------------------------------------------------------------------------------------- | ----------- |
-| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`                      | Implemented |
-| `tiers.go`                                                                             | Partial: create + list done, update/delete pending |
+| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`         | Implemented |
 | `purchases.go`, `check-in.go`, `waitlist.go`, `analytics.go`                           | Empty stubs |
 
 ## Requests

@@ -51,6 +51,45 @@ func (s *TiersStore) Create(ctx context.Context, tier *Tier) error {
 	return nil
 }
 
+func (s *TiersStore) Delete(ctx context.Context, id, eventID string) error {
+	query := `
+    DELETE FROM ticket_tiers
+    WHERE id = $1 AND event_id = $2
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	ct, err := s.pool.Exec(ctx, query, id, eventID)
+	if err != nil {
+		return fmt.Errorf("store: delete tier: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("store: delete tier: %w", ErrNotFound)
+	}
+
+	return nil
+}
+
+func (s *TiersStore) CountByEvent(ctx context.Context, eventID string) (int, error) {
+	query := `
+    SELECT COUNT(*)
+    FROM ticket_tiers
+    WHERE event_id = $1
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	var count int
+	err := s.pool.QueryRow(ctx, query, eventID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("store: count tiers by event: %w", err)
+	}
+
+	return count, nil
+}
+
 func (s *TiersStore) GetByID(ctx context.Context, id string) (*Tier, error) {
 	query := `
     SELECT id, event_id, name, price, quantity, remaining, status,

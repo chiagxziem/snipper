@@ -118,7 +118,7 @@ Draft      → Cancelled  (manual, organizer)
 Published  → Cancelled  (manual, organizer)
 Published  → Sold Out   (automatic, triggered by inventory)
 Sold Out   → Cancelled  (manual, organizer)
-Sold Out   → Published  (automatic, triggered by cancellation freeing inventory)
+Sold Out   → Published  (automatic, triggered by cancellation freeing inventory or a tier quantity increase)
 Published  → Ended      (automatic, triggered by event date passing)
 Sold Out   → Ended      (automatic, triggered by event date passing)
 ```
@@ -132,7 +132,7 @@ Invalid transitions are rejected with a `409 Conflict`.
 - Draft events: fully editable.
 - Published / sold_out: material fields (`starts_at`, `ends_at`, `location`, `cancellation_allowed`, `cancellation_hours_before`) require `confirm_material_change: true` in the request, else `409`. Capacity cannot be lowered below tickets sold (Phase 9 wiring). Name, description, `max_tickets_per_purchase` editable anytime.
 - Cancelled / ended: frozen, `409`.
-- Publish requires at least one tier (Phase 8 wiring).
+- Publish requires at least one tier.
 
 ### Ticket Tiers — `/api/events/{id}/tiers`
 
@@ -140,12 +140,20 @@ Invalid transitions are rejected with a `409 Conflict`.
 | -------- | --------------------------------- | --------- | -------------------------- |
 | `POST`   | `/api/events/{id}/tiers`          | Organizer | Create a ticket tier       |
 | `GET`    | `/api/events/{id}/tiers`          | Public    | List tiers for an event    |
-| `PATCH`  | `/api/events/{id}/tiers/{tierId}` | Organizer | Update a tier (draft only) |
+| `PATCH`  | `/api/events/{id}/tiers/{tierId}` | Organizer | Update a tier (ownership)  |
 | `DELETE` | `/api/events/{id}/tiers/{tierId}` | Organizer | Delete a tier (draft only) |
 
-**Status (implemented):** `POST` (create) and `GET` (list) are done. Create/list run behind `maybeAuth` — tier listings follow the same draft/cancelled visibility rule as events. Update/delete are pending.
+**Status (implemented):** all four endpoints are done. Create/list run behind `maybeAuth` — tier listings follow the same draft/cancelled visibility rule as events.
 
-**Tier update rules (pending):** management is locked to draft events (`409` otherwise); on update, `quantity` must not drop below `remaining` (422); capacity check nets out the tier's old quantity.
+**Tier update rules (implemented):**
+
+- `name` and `price` are editable anytime (historical purchase totals are stored per purchase, so past buyers are unaffected)
+- `quantity` can move in any direction but must stay `>= sold` (`sold = old quantity - remaining`) — `422` otherwise; `remaining` is recomputed as `new quantity - sold`
+- Capacity check nets out the tier's old quantity — sum of all tier quantities must not exceed event capacity (`400` otherwise)
+- `sold_out → available` flip: a tier regains inventory whenever `remaining > 0` after an update
+- `sold_out → published` flip: an event that was fully sold out returns to `published` when any tier regains inventory
+- Delete is locked to draft events (`409` otherwise) — deleting a published tier could strand purchases
+- Cancelled/ended events: all tier edits → `409` (frozen, matches event policy)
 
 **Create tier request:**
 
@@ -520,7 +528,7 @@ gater/
 │   │   ├── users.go         -- getUser, becomeOrganizer
 │   │   ├── health.go        -- checkHealth
 │   │   ├── events.go        -- event handlers: createEvent, getEvent, updateEvent, deleteEvent, publishEvent, cancelEvent, getPublishedEvents, publicEvent
-│   │   ├── tiers.go         -- createTier, listTiers implemented; update/delete pending
+│   │   ├── tiers.go         -- createTier, listTiers, updateTier, deleteTier
 │   │   ├── purchases.go     -- stub
 │   │   ├── waitlist.go      -- stub
 │   │   ├── check-in.go      -- stub
@@ -771,11 +779,12 @@ volumes:
 - Update policy: material fields require `confirm_material_change`, cancelled/ended events frozen, draft-only delete
 - Draft/cancelled events hidden from non-organizers (`publicEvent`, `maybeAuth`)
 
-### Phase 8 — Ticket Tiers (in progress)
+### Phase 8 — Ticket Tiers ✅
 
-- Implement tier handlers: `createTier` ✅, `listTiers` ✅, `updateTier`, `deleteTier`
+- Implement tier handlers: `createTier`, `listTiers`, `updateTier`, `deleteTier`
 - Capacity validation on create/update — sum of tier quantities must not exceed event capacity
-- Tier management locked to draft events only
+- Post-publish rules: name/price editable anytime, quantity `>= sold`, `sold_out` flips at tier and event level
+- Delete locked to draft events only
 - Publish gate: reject publish when the event has no tiers
 
 ### Phase 9 — Purchases + Tickets
