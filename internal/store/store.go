@@ -56,9 +56,12 @@ type Store struct {
 		Delete(ctx context.Context, id string) error
 		Publish(ctx context.Context, id string) (*Event, error)
 		Cancel(ctx context.Context, id string) (*Event, error)
+		SetStatus(ctx context.Context, id, from, to string) error
 	}
 	Tiers interface {
 		Create(ctx context.Context, tier *Tier) error
+		GetByID(ctx context.Context, id string) (*Tier, error)
+		Update(ctx context.Context, tier *Tier) error
 		ListByEvent(ctx context.Context, eventID string) ([]*Tier, error)
 		SumQuantityByEvent(ctx context.Context, eventID string) (int, error)
 	}

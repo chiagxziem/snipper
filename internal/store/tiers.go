@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,6 +46,60 @@ func (s *TiersStore) Create(ctx context.Context, tier *Tier) error {
 	)
 	if err != nil {
 		return fmt.Errorf("store: create tier: %w", err)
+	}
+
+	return nil
+}
+
+func (s *TiersStore) GetByID(ctx context.Context, id string) (*Tier, error) {
+	query := `
+    SELECT id, event_id, name, price, quantity, remaining, status,
+    created_at, updated_at
+    FROM ticket_tiers
+    WHERE id = $1
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	tier := &Tier{}
+	err := s.pool.QueryRow(ctx, query, id).Scan(
+		&tier.ID, &tier.EventID, &tier.Name, &tier.Price, &tier.Quantity,
+		&tier.Remaining, &tier.Status, &tier.CreatedAt, &tier.UpdatedAt,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, fmt.Errorf("store: get tier by id: %w", ErrNotFound)
+		default:
+			return nil, fmt.Errorf("store: get tier by id: %w", err)
+		}
+	}
+
+	return tier, nil
+}
+
+func (s *TiersStore) Update(ctx context.Context, tier *Tier) error {
+	query := `
+    UPDATE ticket_tiers
+    SET name = $2, price = $3, quantity = $4, remaining = $5, status = $6
+    WHERE id = $1
+    RETURNING id, event_id, name, price, quantity, remaining, status,
+    created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	err := s.pool.QueryRow(
+		ctx, query, tier.ID, tier.Name, tier.Price, tier.Quantity,
+		tier.Remaining, tier.Status,
+	).Scan(
+		&tier.ID, &tier.EventID, &tier.Name, &tier.Price, &tier.Quantity,
+		&tier.Remaining, &tier.Status, &tier.CreatedAt, &tier.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("store: update tier: %w", err)
 	}
 
 	return nil

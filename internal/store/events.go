@@ -179,6 +179,24 @@ func (s *EventsStore) Cancel(ctx context.Context, id string) (*Event, error) {
 	return event, nil
 }
 
+func (s *EventsStore) SetStatus(ctx context.Context, id, from, to string) error {
+	query := `
+    UPDATE events
+    SET status = $3
+    WHERE id = $1 AND status = $2
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	_, err := s.pool.Exec(ctx, query, id, from, to)
+	if err != nil {
+		return fmt.Errorf("store: set event status: %w", err)
+	}
+
+	return nil
+}
+
 func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,
