@@ -6,7 +6,7 @@ dev: db-up
 
 # Build the server binary
 build:
-    go build -o bin/server cmd/server
+    go build -o bin/server ./cmd/server
 
 # Run database migrations
 migrate:
