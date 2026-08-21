@@ -189,8 +189,7 @@ func (s *EventsStore) SetStatus(ctx context.Context, id, from, to string) error 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
-	_, err := s.pool.Exec(ctx, query, id, from, to)
-	if err != nil {
+	if _, err := s.pool.Exec(ctx, query, id, from, to); err != nil {
 		return fmt.Errorf("store: set event status: %w", err)
 	}
 

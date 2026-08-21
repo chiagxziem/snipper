@@ -95,8 +95,7 @@ func (s *SessionStore) Delete(ctx context.Context, sessionID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
-	_, err := s.pool.Exec(ctx, query, sessionID)
-	if err != nil {
+	if _, err := s.pool.Exec(ctx, query, sessionID); err != nil {
 		return fmt.Errorf("store: delete session: %w", err)
 	}
 
@@ -112,8 +111,7 @@ func (s *SessionStore) DeleteAll(ctx context.Context, userID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
-	_, err := s.pool.Exec(ctx, query, userID)
-	if err != nil {
+	if _, err := s.pool.Exec(ctx, query, userID); err != nil {
 		return fmt.Errorf("store: delete all sessions: %w", err)
 	}
 

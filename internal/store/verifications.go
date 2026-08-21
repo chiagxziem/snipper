@@ -138,8 +138,7 @@ func (v *VerificationStore) Delete(ctx context.Context, ID string) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
-	_, err := v.pool.Exec(ctx, query, ID)
-	if err != nil {
+	if _, err := v.pool.Exec(ctx, query, ID); err != nil {
 		return fmt.Errorf("store: delete verification: %w", err)
 	}
 
@@ -155,8 +154,7 @@ func (v *VerificationStore) DeleteByIdentifier(ctx context.Context, identifier s
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
-	_, err := v.pool.Exec(ctx, query, identifier)
-	if err != nil {
+	if _, err := v.pool.Exec(ctx, query, identifier); err != nil {
 		return fmt.Errorf("store: delete verification by identifier: %w", err)
 	}
 
