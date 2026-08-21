@@ -33,7 +33,7 @@ Handlers manually wired into `application` struct in `main.go` — no DI framewo
 - **Event updates:** draft events are fully editable. Published/sold_out: material fields (dates, location, cancellation policy) need `confirm_material_change: true`, capacity can't drop below tickets sold; cancelled/ended events are frozen (409). Name/description/max_tickets editable anytime.
 - **Cookie** `gater_auth_session` set on login (HttpOnly, Lax, 30d, Secure only in production, `SameSite=Lax`). CORS `AllowCredentials: true` lets browsers send it cross-origin.
 - **JSON response:** Success `{"data": ...}` via `WriteData`, errors `{"errors": [...]}` via `WriteError` (single msg) / `WriteErrors` (validation). Exception: health check uses bare `Write` → `{"status":"OK"}`.
-- **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL, no transactions.
+- **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL; `PurchasesStore.Create` is the only transaction so far (`pool.Begin` + deferred rollback inside one store method — handlers never see `pgx.Tx`).
 - **Background email** uses `context.Background()`, errors only logged.
 - **Tier payloads:** `price`/`quantity` are pointers on create (omitted ≠ 0); update payloads are pointer-based so omitted fields stay unchanged.
 - **Tier updates:** `name`/`price` editable anytime (purchase totals are stored per purchase); `quantity` must stay `>= sold` (422) with `remaining` recomputed; capacity check nets out the tier's old quantity; tier `sold_out → available` and event `sold_out → published` flips on quantity increase; delete is draft-only; cancelled/ended events freeze all tier edits (409).
@@ -58,6 +58,7 @@ GET    /api/events/{id}/tiers           (public; drafts private)
 POST   /api/events/{id}/tiers           (organizer, draft only, capacity-checked)
 PATCH  /api/events/{id}/tiers/{tierId}  (organizer, ownership; quantity >= sold, sold_out flips)
 DELETE /api/events/{id}/tiers/{tierId}  (organizer, draft only)
+POST   /api/purchases                   (protected; tx: tier lock → checks → decrement → tickets)
 ```
 
 ## Implemented vs stubs
@@ -65,7 +66,8 @@ DELETE /api/events/{id}/tiers/{tierId}  (organizer, draft only)
 | File                                                                                  | Status      |
 | ------------------------------------------------------------------------------------- | ----------- |
 | `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`         | Implemented |
-| `purchases.go`, `check-in.go`, `waitlist.go`, `analytics.go`                           | Empty stubs |
+| `purchases.go`                                                                        | Partial: createPurchase done |
+| `check-in.go`, `waitlist.go`, `analytics.go`                                           | Empty stubs |
 
 ## Requests
 

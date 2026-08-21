@@ -199,32 +199,55 @@ Price in cents. If the event has a `capacity` set, the sum of all tier quantitie
 }
 ```
 
-**Purchase response:**
+**Purchase response:** the purchase nests **full** `event`, `tier`, and `tickets` objects (all columns), not summaries:
 
 ```json
 {
   "id": "uuid",
-  "event": {
-    "id": "uuid",
-    "name": "Lagos Tech Meetup",
-    "starts_at": "2026-08-15T18:00:00Z"
-  },
-  "tier": {
-    "id": "uuid",
-    "name": "General Admission",
-    "price": 2000
-  },
   "quantity": 2,
   "total": 4000,
   "status": "confirmed",
+  "event": {
+    "id": "uuid",
+    "organizer_id": "uuid",
+    "name": "Lagos Tech Meetup",
+    "description": "A gathering of tech folks in Lagos.",
+    "location": "Landmark Event Centre, Lagos",
+    "status": "published",
+    "starts_at": "2026-08-15T18:00:00Z",
+    "ends_at": "2026-08-15T21:00:00Z",
+    "capacity": 300,
+    "cancellation_allowed": true,
+    "cancellation_hours_before": 24,
+    "max_tickets_per_purchase": 5,
+    "created_at": "2026-05-26T10:00:00Z",
+    "updated_at": "2026-05-26T10:00:00Z"
+  },
+  "tier": {
+    "id": "uuid",
+    "event_id": "uuid",
+    "name": "General Admission",
+    "price": 2000,
+    "quantity": 200,
+    "remaining": 198,
+    "status": "available",
+    "created_at": "2026-05-26T10:00:00Z",
+    "updated_at": "2026-05-26T10:00:00Z"
+  },
   "tickets": [
     {
       "id": "uuid",
+      "purchase_id": "uuid",
+      "tier_id": "uuid",
       "qr_token": "signed-token-here",
-      "status": "unused"
+      "status": "unused",
+      "checked_in_at": null,
+      "created_at": "2026-05-26T10:00:00Z",
+      "updated_at": "2026-05-26T10:00:00Z"
     }
   ],
-  "created_at": "2026-05-26T10:00:00Z"
+  "created_at": "2026-05-26T10:00:00Z",
+  "updated_at": "2026-05-26T10:00:00Z"
 }
 ```
 
@@ -787,10 +810,11 @@ volumes:
 - Delete locked to draft events only
 - Publish gate: reject publish when the event has no tiers
 
-### Phase 9 — Purchases + Tickets
+### Phase 9 — Purchases + Tickets (in progress)
 
-- `internal/qr/qr.go` — `GenerateToken()` + `VerifyToken()` using HMAC-SHA256
-- Implement `createPurchase` with `SELECT FOR UPDATE` transaction
+- `internal/qr/qr.go` — `GenerateToken()` + `VerifyToken()` using HMAC-SHA256 ✅
+- Implement `createPurchase` with `SELECT FOR UPDATE` transaction ✅
+  - single tx: lock tier → authoritative checks → decrement inventory → insert purchase → batch-insert tickets (QR tokens signed by handler, DB values backfilled via `RETURNING`) → event `sold_out` flip
 - Cancellation policy enforcement on `cancelPurchase`
 - Inventory restoration + waitlist promotion trigger on cancellation
 - Implement `listPurchases`, `getPurchase`

@@ -11,6 +11,7 @@ func (a *application) getUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
+	// the authenticated user, set on the context by requireAuth
 	user, ok := ctx.Value(userCtx).(*store.User)
 	if !ok {
 		logger.Error("failed to get user from context")
@@ -28,6 +29,7 @@ func (a *application) becomeOrganizer(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
+	// the authenticated user, set on the context by requireAuth
 	user, ok := ctx.Value(userCtx).(*store.User)
 	if !ok {
 		logger.Error("failed to get user from context")

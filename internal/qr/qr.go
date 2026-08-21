@@ -14,16 +14,6 @@ import (
 
 var ErrInvalidToken = errors.New("qr: invalid token")
 
-func createHMAC(payload []byte, secret string) []byte {
-	// create a new HMAC instance using SHA256 with the ticket secret as the key
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write(payload)
-
-	// get and return the resulting bytes
-	sig := h.Sum(nil)
-	return sig
-}
-
 func GenerateToken(ticketID, purchaseID, tierID uuid.UUID, secret string) string {
 	payload := fmt.Appendf(nil, "%s:%s:%s", ticketID, purchaseID, tierID)
 	sig := createHMAC(payload, secret)
@@ -72,4 +62,14 @@ func VerifyToken(token, secret string) (ticketID uuid.UUID, err error) {
 	}
 
 	return ticketID, nil
+}
+
+func createHMAC(payload []byte, secret string) []byte {
+	// create a new HMAC instance using SHA256 with the ticket secret as the key
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write(payload)
+
+	// get and return the resulting bytes
+	sig := h.Sum(nil)
+	return sig
 }

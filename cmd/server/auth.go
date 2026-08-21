@@ -229,6 +229,7 @@ func (a *application) logoutUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
+	// the session of the user, set on the context by requireAuth
 	session, ok := ctx.Value(sessionCtx).(*store.Session)
 	if !ok {
 		logger.Error("failed to get session from context")

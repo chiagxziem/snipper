@@ -324,11 +324,11 @@ func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// publicEvent loads the event in {id} for a public route and enforces strict
+// getPublicEvent loads the event in {id} for a public route and enforces strict
 // visibility: draft/cancelled events are only visible to their organizer,
 // everyone else gets a 404 so their existence isn't leaked. Runs behind
 // maybeAuth.
-func (a *application) publicEvent(w http.ResponseWriter, r *http.Request) *store.Event {
+func (a *application) getPublicEvent(w http.ResponseWriter, r *http.Request) *store.Event {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
@@ -368,9 +368,9 @@ func (a *application) publicEvent(w http.ResponseWriter, r *http.Request) *store
 func (a *application) getEvent(w http.ResponseWriter, r *http.Request) {
 	// runs behind maybeAuth, so a guest gets nil user from the context
 
-	event := a.publicEvent(w, r)
+	event := a.getPublicEvent(w, r)
 	if event == nil {
-		return // error response already written in publicEvent
+		return // error response already written in getPublicEvent
 	}
 
 	type returnData struct {

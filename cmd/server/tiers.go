@@ -21,9 +21,9 @@ func (a *application) listTiers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
 
-	event := a.publicEvent(w, r)
+	event := a.getPublicEvent(w, r)
 	if event == nil {
-		return // error response already written in publicEvent
+		return // error response already written in getPublicEvent
 	}
 
 	tiers, err := a.store.Tiers.ListByEvent(ctx, event.ID.String())

@@ -137,6 +137,12 @@ func (a *application) mount() http.Handler {
 				})
 			})
 		})
+
+		// purchases
+		r.Route("/purchases", func(r chi.Router) {
+			r.Use(a.requireAuth)
+			r.Post("/", a.createPurchase)
+		})
 	})
 
 	return r

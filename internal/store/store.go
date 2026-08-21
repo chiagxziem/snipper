@@ -11,10 +11,14 @@ import (
 )
 
 var (
-	ErrConflict          = errors.New("resource already exists")
-	ErrNotFound          = errors.New("resource not found")
-	queryTimeoutDuration = time.Second * 5
+	ErrConflict              = errors.New("resource already exists")
+	ErrNotFound              = errors.New("resource not found")
+	ErrEventNotPublished     = errors.New("event is not open for ticket sales")
+	ErrInsufficientRemaining = errors.New("not enough tickets remaining")
+	ErrExceedsMaxPerPurchase = errors.New("quantity exceeds the maximum tickets per purchase")
 )
+
+var queryTimeoutDuration = time.Second * 5
 
 const (
 	RoleOrganizer string = "organizer"
@@ -67,6 +71,9 @@ type Store struct {
 		ListByEvent(ctx context.Context, eventID string) ([]*Tier, error)
 		SumQuantityByEvent(ctx context.Context, eventID string) (int, error)
 	}
+	Purchases interface {
+		Create(ctx context.Context, purchase *Purchase, tickets []Ticket) error
+	}
 }
 
 func New(pool *pgxpool.Pool) Store {
@@ -77,5 +84,6 @@ func New(pool *pgxpool.Pool) Store {
 		OAuthAccounts: &OAuthStore{pool},
 		Events:        &EventsStore{pool},
 		Tiers:         &TiersStore{pool},
+		Purchases:     &PurchasesStore{pool},
 	}
 }
