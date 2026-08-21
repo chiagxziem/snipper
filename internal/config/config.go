@@ -19,6 +19,7 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURI  string
+	TicketSecret       string
 }
 
 const (
@@ -38,6 +39,7 @@ func (c *Config) validate() error {
 		"GOOGLE_CLIENT_ID":     c.GoogleClientID,
 		"GOOGLE_CLIENT_SECRET": c.GoogleClientSecret,
 		"GOOGLE_REDIRECT_URI":  c.GoogleRedirectURI,
+		"TICKET_SECRET":        c.TicketSecret,
 	}
 
 	for k, v := range required {
@@ -68,6 +70,7 @@ func Load() (*Config, error) {
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GoogleRedirectURI:  os.Getenv("GOOGLE_REDIRECT_URI"),
+		TicketSecret:       os.Getenv("TICKET_SECRET"),
 	}
 
 	if err := cfg.validate(); err != nil {
