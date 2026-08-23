@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -154,7 +155,17 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 		event.EndsAt = *payload.EndsAt
 	}
 	if payload.Capacity != nil {
-		// TODO (Phase 9): reject if the new capacity is below tickets already sold
+		sold, err := a.store.Purchases.SumConfirmedQuantityByEvent(ctx, event.ID.String())
+		if err != nil {
+			logger.Error("failed to sum confirmed purchases", "error", err, "event_id", event.ID)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+			return
+		}
+		if *payload.Capacity < sold {
+			jsonutil.WriteError(w, http.StatusUnprocessableEntity,
+				fmt.Sprintf("capacity cannot be reduced below the %d tickets already sold", sold))
+			return
+		}
 		event.Capacity = payload.Capacity
 	}
 	if payload.CancellationAllowed != nil {
@@ -181,9 +192,22 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 	case "published", "sold_out":
 		// material changes require explicit confirmation; without it, reject
 		if changedMaterial && (payload.ConfirmMaterialChange == nil || !*payload.ConfirmMaterialChange) {
-			// TODO (Phase 9): include the number of confirmed ticket holders affected
-			jsonutil.WriteError(w, http.StatusConflict,
-				"this change affects confirmed ticket holders; pass confirm_material_change: true to proceed")
+			affected, err := a.store.Purchases.SumConfirmedQuantityByEvent(ctx, event.ID.String())
+			if err != nil {
+				logger.Error("failed to sum confirmed purchases", "error", err, "event_id", event.ID)
+				jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+				return
+			}
+
+			// zero buyers gets its own message: "affects 0 ticket holders"
+			// undermines a warning that exists to protect buyers
+			var msg string
+			if affected > 0 {
+				msg = fmt.Sprintf("this change affects %d confirmed ticket holders; pass confirm_material_change: true to proceed", affected)
+			} else {
+				msg = "no tickets have been sold yet; pass confirm_material_change: true to proceed"
+			}
+			jsonutil.WriteError(w, http.StatusConflict, msg)
 			return
 		}
 

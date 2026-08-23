@@ -77,6 +77,7 @@ type Store struct {
 		ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error)
 		ListByUser(ctx context.Context, userID string, limit, offset int) ([]PurchaseSummary, error)
 		CountByUser(ctx context.Context, userID string) (int, error)
+		SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error)
 	}
 }
 

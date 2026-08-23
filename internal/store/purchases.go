@@ -126,6 +126,27 @@ func (s *PurchasesStore) CountByUser(ctx context.Context, userID string) (int, e
 	return count, nil
 }
 
+func (s *PurchasesStore) SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error) {
+	// COALESCE ensures 0 is returned if no sales has been made (SUM over zero rows is NULL)
+	query := `
+		SELECT COALESCE(SUM(p.quantity), 0)
+		FROM purchases p
+		JOIN ticket_tiers t ON t.id = p.tier_id
+		WHERE t.event_id = $1 AND p.status = 'confirmed'
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	var sum int
+	err := s.pool.QueryRow(ctx, query, eventID).Scan(&sum)
+	if err != nil {
+		return 0, fmt.Errorf("store: sum confirmed quantity by event: %w", err)
+	}
+
+	return sum, nil
+}
+
 func (s *PurchasesStore) GetByID(ctx context.Context, id, userID string) (*Purchase, error) {
 	query := `
 		SELECT id, user_id, tier_id, quantity, total, status,
