@@ -204,6 +204,81 @@ func (a *application) listPurchases(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *application) cancelPurchase(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the authenticated user, set on the context by requireAuth
+	user, ok := ctx.Value(userCtx).(*store.User)
+	if !ok {
+		logger.Error("failed to get user from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// ensure the {id} route param is a real UUID before hitting the DB
+	idParam := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(idParam); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid purchase id")
+		return
+	}
+
+	purchase, err := a.store.Purchases.Cancel(ctx, idParam, user.ID.String())
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			jsonutil.WriteError(w, http.StatusNotFound, "purchase not found")
+		case errors.Is(err, store.ErrAlreadyCancelled):
+			jsonutil.WriteError(w, http.StatusConflict, "purchase has already been cancelled")
+		case errors.Is(err, store.ErrEventStarted):
+			jsonutil.WriteError(w, http.StatusConflict, "event has already started")
+		case errors.Is(err, store.ErrCancellationNotAllowed):
+			jsonutil.WriteError(w, http.StatusConflict, "this event does not allow cancellations")
+		case errors.Is(err, store.ErrOutsideCancellationWindow):
+			jsonutil.WriteError(w, http.StatusConflict, "cancellations are closed for this event")
+		default:
+			logger.Error("failed to cancel purchase", "error", err, "purchase_id", idParam, "user_id", user.ID)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		}
+		return
+	}
+
+	tickets, err := a.store.Purchases.ListTicketsByPurchase(ctx, purchase.ID.String())
+	if err != nil {
+		logger.Error("failed to list tickets", "error", err, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// the tier and event must exist if the purchase does, so any failure
+	// here is corruption, not a client error, therefore 500
+	tier, err := a.store.Tiers.GetByID(ctx, purchase.TierID.String())
+	if err != nil {
+		logger.Error("failed to get purchase tier", "error", err, "tier_id", purchase.TierID, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	event, err := a.store.Events.GetByID(ctx, tier.EventID.String())
+	if err != nil {
+		logger.Error("failed to get purchase event", "error", err, "event_id", tier.EventID, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	jsonutil.WriteData(w, http.StatusOK, purchaseResponse{
+		ID:        purchase.ID,
+		Quantity:  purchase.Quantity,
+		Total:     purchase.Total,
+		Status:    purchase.Status,
+		Event:     *event,
+		Tier:      *tier,
+		Tickets:   tickets,
+		CreatedAt: purchase.CreatedAt,
+		UpdatedAt: purchase.UpdatedAt,
+	})
+}
+
 func (a *application) getPurchase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)

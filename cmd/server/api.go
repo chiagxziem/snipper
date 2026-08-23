@@ -145,6 +145,7 @@ func (a *application) mount() http.Handler {
 			r.Get("/", a.listPurchases)
 			r.Post("/", a.createPurchase)
 			r.Get("/{id}", a.getPurchase)
+			r.Post("/{id}/cancel", a.cancelPurchase)
 		})
 	})
 

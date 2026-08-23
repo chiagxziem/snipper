@@ -220,8 +220,7 @@ func (s *PurchasesStore) Create(
 	// lock the tier row; concurrent buyers queue until COMMIT
 	const lockTier = `
 		SELECT price, remaining, status, event_id
-		FROM ticket_tiers
-		WHERE id = $1
+		FROM ticket_tiers WHERE id = $1
 		FOR UPDATE
 	`
 	var price, remaining int
@@ -340,4 +339,119 @@ func (s *PurchasesStore) Create(
 	}
 
 	return nil
+}
+
+func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purchase, error) {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	// init tx
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// lock the purchase row
+	const lockPurchase = `
+    SELECT id, user_id, tier_id, quantity, total, status, created_at
+    FROM purchases WHERE id = $1 AND user_id = $2
+    FOR UPDATE
+  `
+
+	purchase := &Purchase{}
+	err = tx.QueryRow(ctx, lockPurchase, id, userID).Scan(
+		&purchase.ID, &purchase.UserID, &purchase.TierID, &purchase.Quantity,
+		&purchase.Total, &purchase.Status, &purchase.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("store: cancel purchase: %w", ErrNotFound)
+		}
+		return nil, fmt.Errorf("store: cancel purchase: lock purchase: %w", err)
+	}
+	// if purchase is already cancelled, return error
+	if purchase.Status != "confirmed" {
+		return nil, fmt.Errorf("store: cancel purchase: %w", ErrAlreadyCancelled)
+	}
+
+	// load the tier + event rules
+	const loadEventAndTierRules = `
+    SELECT t.event_id, t.remaining, e.status, e.starts_at,
+           e.cancellation_allowed, e.cancellation_hours_before
+    FROM ticket_tiers t JOIN events e ON e.id = t.event_id
+    WHERE t.id = $1
+  `
+	var eventID uuid.UUID
+	var remaining, cancellationHoursBefore int
+	var eventStatus string
+	var cancellationAllowed bool
+	var startsAt time.Time
+	err = tx.QueryRow(ctx, loadEventAndTierRules, purchase.TierID).Scan(
+		&eventID, &remaining, &eventStatus, &startsAt, &cancellationAllowed, &cancellationHoursBefore,
+	)
+	// if the purchase that tierId is gotten from already exists,
+	// then the tier and the event definitely exists
+	// so no pgx.ErrNoRows error to check here
+	if err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: load tier + event rules: %w", err)
+	}
+
+	// policy checks
+	now := time.Now()
+	switch {
+	case !now.Before(startsAt):
+		return nil, fmt.Errorf("store: cancel purchase: %w", ErrEventStarted)
+	case !cancellationAllowed:
+		return nil, fmt.Errorf("store: cancel purchase: %w", ErrCancellationNotAllowed)
+	case now.After(startsAt.Add(-time.Duration(cancellationHoursBefore) * time.Hour)):
+		return nil, fmt.Errorf("store: cancel purchase: %w", ErrOutsideCancellationWindow)
+	}
+
+	// flip purchase status from confirmed to cancelled
+	const flipPurchase = `
+    UPDATE purchases SET status = 'cancelled'
+    WHERE id = $1 RETURNING status, updated_at
+  `
+	err = tx.QueryRow(ctx, flipPurchase, purchase.ID).Scan(
+		&purchase.Status, &purchase.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: flip purchase: %w", err)
+	}
+
+	// flip the purchase tickets
+	const flipTickets = `
+    UPDATE tickets SET status = 'cancelled'
+    WHERE purchase_id = $1
+  `
+	if _, err := tx.Exec(ctx, flipTickets, purchase.ID); err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: flip tickets: %w", err)
+	}
+
+	// restore ticket tier inventory
+	const restoreTierInventory = `
+    UPDATE ticket_tiers
+    SET remaining = remaining + $2, status = 'available'
+    WHERE id = $1
+  `
+	_, err = tx.Exec(ctx, restoreTierInventory, purchase.TierID, purchase.Quantity)
+	if err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: flip tier inventory: %w", err)
+	}
+
+	const flipEventStatus = `
+    UPDATE events SET status = 'published'
+    WHERE id = $1 AND status = 'sold_out'
+  `
+	if _, err := tx.Exec(ctx, flipEventStatus, eventID); err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: flip event status: %w", err)
+	}
+
+	// commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: cancel purchase: commit: %w", err)
+	}
+
+	return purchase, nil
 }

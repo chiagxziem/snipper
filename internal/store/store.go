@@ -11,11 +11,15 @@ import (
 )
 
 var (
-	ErrConflict              = errors.New("resource already exists")
-	ErrNotFound              = errors.New("resource not found")
-	ErrEventNotPublished     = errors.New("event is not open for ticket sales")
-	ErrInsufficientRemaining = errors.New("not enough tickets remaining")
-	ErrExceedsMaxPerPurchase = errors.New("quantity exceeds the maximum tickets per purchase")
+	ErrConflict                  = errors.New("resource already exists")
+	ErrNotFound                  = errors.New("resource not found")
+	ErrEventStarted              = errors.New("event has already started")
+	ErrAlreadyCancelled          = errors.New("purchase has already been cancelled")
+	ErrEventNotPublished         = errors.New("event is not open for ticket sales")
+	ErrInsufficientRemaining     = errors.New("not enough tickets remaining")
+	ErrExceedsMaxPerPurchase     = errors.New("quantity exceeds the maximum tickets per purchase")
+	ErrCancellationNotAllowed    = errors.New("event does not allow cancellations")
+	ErrOutsideCancellationWindow = errors.New("cancellation window has closed")
 )
 
 var queryTimeoutDuration = time.Second * 5
@@ -74,6 +78,7 @@ type Store struct {
 	Purchases interface {
 		Create(ctx context.Context, purchase *Purchase, tickets []Ticket) error
 		GetByID(ctx context.Context, id, userID string) (*Purchase, error)
+		Cancel(ctx context.Context, id, userID string) (*Purchase, error)
 		ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error)
 		ListByUser(ctx context.Context, userID string, limit, offset int) ([]PurchaseSummary, error)
 		CountByUser(ctx context.Context, userID string) (int, error)
