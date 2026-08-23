@@ -37,6 +37,60 @@ type Ticket struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+func (s *PurchasesStore) GetByID(ctx context.Context, id, userID string) (*Purchase, error) {
+	query := `
+		SELECT id, user_id, tier_id, quantity, total, status,
+		created_at, updated_at
+		FROM purchases
+		WHERE id = $1 AND user_id = $2
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	purchase := &Purchase{}
+	err := s.pool.QueryRow(ctx, query, id, userID).Scan(
+		&purchase.ID, &purchase.UserID, &purchase.TierID, &purchase.Quantity,
+		&purchase.Total, &purchase.Status, &purchase.CreatedAt, &purchase.UpdatedAt,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return nil, fmt.Errorf("store: get purchase by id: %w", ErrNotFound)
+		default:
+			return nil, fmt.Errorf("store: get purchase by id: %w", err)
+		}
+	}
+
+	return purchase, nil
+}
+func (s *PurchasesStore) ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error) {
+	query := `
+		SELECT id, purchase_id, tier_id, qr_token, status,
+		checked_in_at, created_at, updated_at
+		FROM tickets
+		WHERE purchase_id = $1
+		ORDER BY created_at ASC
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query, purchaseID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list tickets by purchase: %w", err)
+	}
+	defer rows.Close()
+
+	// create a slice of Ticket from the rows gotten from the DB query
+	tickets, err := pgx.CollectRows(rows, pgx.RowTo[Ticket])
+	if err != nil {
+		return nil, fmt.Errorf("store: collect tickets by purchase: %w", err)
+	}
+
+	return tickets, nil
+}
+
 func (s *PurchasesStore) Create(
 	ctx context.Context,
 	purchase *Purchase,

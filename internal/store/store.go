@@ -73,6 +73,8 @@ type Store struct {
 	}
 	Purchases interface {
 		Create(ctx context.Context, purchase *Purchase, tickets []Ticket) error
+		GetByID(ctx context.Context, id, userID string) (*Purchase, error)
+		ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error)
 	}
 }
 

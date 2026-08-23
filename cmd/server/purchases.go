@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/qr"
@@ -15,6 +16,18 @@ import (
 type CreatePurchasePayload struct {
 	TierID   string `json:"tier_id" validate:"required"`
 	Quantity int    `json:"quantity" validate:"required,gte=1"`
+}
+
+type purchaseResponse struct {
+	ID        uuid.UUID      `json:"id"`
+	Quantity  int            `json:"quantity"`
+	Total     int            `json:"total"`
+	Status    string         `json:"status"`
+	Event     store.Event    `json:"event"`
+	Tier      store.Tier     `json:"tier"`
+	Tickets   []store.Ticket `json:"tickets"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 func (a *application) createPurchase(w http.ResponseWriter, r *http.Request) {
@@ -111,18 +124,77 @@ func (a *application) createPurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type returnData struct {
-		ID        uuid.UUID      `json:"id"`
-		Quantity  int            `json:"quantity"`
-		Total     int            `json:"total"`
-		Status    string         `json:"status"`
-		Event     store.Event    `json:"event"`
-		Tier      store.Tier     `json:"tier"`
-		Tickets   []store.Ticket `json:"tickets"`
-		CreatedAt time.Time      `json:"created_at"`
-		UpdatedAt time.Time      `json:"updated_at"`
+	jsonutil.WriteData(w, http.StatusCreated, purchaseResponse{
+		ID:        purchase.ID,
+		Quantity:  purchase.Quantity,
+		Total:     purchase.Total,
+		Status:    purchase.Status,
+		Event:     *event,
+		Tier:      *tier,
+		Tickets:   tickets,
+		CreatedAt: purchase.CreatedAt,
+		UpdatedAt: purchase.UpdatedAt,
+	})
+}
+
+// getPurchase returns one of the authenticated user's purchases: the
+// purchase itself, its tickets, and the event/tier they belong to.
+func (a *application) getPurchase(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the authenticated user, set on the context by requireAuth
+	user, ok := ctx.Value(userCtx).(*store.User)
+	if !ok {
+		logger.Error("failed to get user from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
 	}
-	jsonutil.WriteData(w, http.StatusCreated, returnData{
+
+	// ensure the {id} route param is a real UUID before hitting the DB
+	idParam := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(idParam); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid purchase id")
+		return
+	}
+
+	purchase, err := a.store.Purchases.GetByID(ctx, idParam, user.ID.String())
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			jsonutil.WriteError(w, http.StatusNotFound, "purchase not found")
+		default:
+			logger.Error("failed to get purchase", "error", err, "purchase_id", idParam, "user_id", user.ID)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		}
+		return
+	}
+
+	tickets, err := a.store.Purchases.ListTicketsByPurchase(ctx, purchase.ID.String())
+	if err != nil {
+		logger.Error("failed to list tickets", "error", err, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// the tier and event must exist if the purchase does, since foreign keys
+	// cascade their deletes, so ErrNotFound here would mean corruption,
+	// not a client error; treat any failure as a 500
+	tier, err := a.store.Tiers.GetByID(ctx, purchase.TierID.String())
+	if err != nil {
+		logger.Error("failed to get purchase tier", "error", err, "tier_id", purchase.TierID, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	event, err := a.store.Events.GetByID(ctx, tier.EventID.String())
+	if err != nil {
+		logger.Error("failed to get purchase event", "error", err, "event_id", tier.EventID, "purchase_id", purchase.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	jsonutil.WriteData(w, http.StatusOK, purchaseResponse{
 		ID:        purchase.ID,
 		Quantity:  purchase.Quantity,
 		Total:     purchase.Total,
