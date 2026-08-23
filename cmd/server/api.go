@@ -142,6 +142,7 @@ func (a *application) mount() http.Handler {
 		r.Route("/purchases", func(r chi.Router) {
 			r.Use(a.requireAuth)
 
+			r.Get("/", a.listPurchases)
 			r.Post("/", a.createPurchase)
 			r.Get("/{id}", a.getPurchase)
 		})

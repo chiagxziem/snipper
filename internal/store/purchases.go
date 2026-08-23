@@ -37,6 +37,95 @@ type Ticket struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+// tickets are excluded entirely from the purchase summary, because
+// QR tokens are bulky and belong behind /purchases/{id}.
+type PurchaseSummary struct {
+	ID       uuid.UUID `json:"id"`
+	Quantity int       `json:"quantity"`
+	Total    int       `json:"total"`
+	Status   string    `json:"status"`
+	Event    struct {
+		ID       uuid.UUID `json:"id"`
+		Name     string    `json:"name"`
+		StartsAt time.Time `json:"starts_at"`
+	} `json:"event"`
+	Tier struct {
+		ID    uuid.UUID `json:"id"`
+		Name  string    `json:"name"`
+		Price int       `json:"price"`
+	} `json:"tier"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *PurchasesStore) ListByUser(
+	ctx context.Context,
+	userID string,
+	limit, offset int,
+) ([]PurchaseSummary, error) {
+	query := `
+		SELECT p.id, p.quantity, p.total, p.status, p.created_at,
+		e.id, e.name, e.starts_at,
+		t.id, t.name, t.price
+		FROM purchases p
+		JOIN ticket_tiers t ON t.id = p.tier_id
+		JOIN events e ON e.id = t.event_id
+		WHERE p.user_id = $1
+		ORDER BY p.created_at DESC, p.id DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("store: list purchases by user: %w", err)
+	}
+	defer rows.Close()
+
+	// non-nil so an empty history marshals as [] not null
+	summaries := make([]PurchaseSummary, 0)
+
+	for rows.Next() {
+		var summary PurchaseSummary
+		err := rows.Scan(
+			&summary.ID, &summary.Quantity, &summary.Total, &summary.Status, &summary.CreatedAt,
+			&summary.Event.ID, &summary.Event.Name, &summary.Event.StartsAt,
+			&summary.Tier.ID, &summary.Tier.Name, &summary.Tier.Price,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("store: list purchases by user: %w", err)
+		}
+		summaries = append(summaries, summary)
+	}
+	// get errors the iteration itself hit
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list purchases by user: %w", err)
+	}
+
+	return summaries, nil
+}
+
+func (s *PurchasesStore) CountByUser(ctx context.Context, userID string) (int, error) {
+	// the DB index `idx_purchases_user_id` makes this query cheap
+	query := `
+		SELECT COUNT(*)
+		FROM purchases
+		WHERE user_id = $1
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	var count int
+	err := s.pool.QueryRow(ctx, query, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("store: count purchases by user: %w", err)
+	}
+
+	return count, nil
+}
+
 func (s *PurchasesStore) GetByID(ctx context.Context, id, userID string) (*Purchase, error) {
 	query := `
 		SELECT id, user_id, tier_id, quantity, total, status,
@@ -64,6 +153,7 @@ func (s *PurchasesStore) GetByID(ctx context.Context, id, userID string) (*Purch
 
 	return purchase, nil
 }
+
 func (s *PurchasesStore) ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error) {
 	query := `
 		SELECT id, purchase_id, tier_id, qr_token, status,

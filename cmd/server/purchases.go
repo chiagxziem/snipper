@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -137,8 +138,72 @@ func (a *application) createPurchase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getPurchase returns one of the authenticated user's purchases: the
-// purchase itself, its tickets, and the event/tier they belong to.
+func (a *application) listPurchases(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the authenticated user, set on the context by requireAuth
+	user, ok := ctx.Value(userCtx).(*store.User)
+	if !ok {
+		logger.Error("failed to get user from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// limit has a default of 50, and is clamped to 1-100
+	// malformed or out-of-range values silently fall back to the default
+	// rather than erroring, so sloppy clients still get sane pages
+	limit := 50
+	if lq := r.URL.Query().Get("limit"); lq != "" {
+		if v, err := strconv.Atoi(lq); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+
+	// page starts from 1, and unlike limit, a bad page is rejected loudly
+	page := 1
+	if pq := r.URL.Query().Get("page"); pq != "" {
+		v, err := strconv.Atoi(pq)
+		if err != nil || v < 1 {
+			jsonutil.WriteError(w, http.StatusBadRequest, "invalid page")
+			return
+		}
+		page = v
+	}
+
+	offset := (page - 1) * limit
+
+	purchases, err := a.store.Purchases.ListByUser(ctx, user.ID.String(), limit, offset)
+	if err != nil {
+		logger.Error("failed to list purchases", "error", err, "user_id", user.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// for getting the total number of purchases
+	total, err := a.store.Purchases.CountByUser(ctx, user.ID.String())
+	if err != nil {
+		logger.Error("failed to count purchases", "error", err, "user_id", user.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message   string                  `json:"message"`
+		Purchases []store.PurchaseSummary `json:"purchases"`
+		Page      int                     `json:"page"`
+		Limit     int                     `json:"limit"`
+		Total     int                     `json:"total"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message:   "purchases retrieved successfully",
+		Purchases: purchases,
+		Page:      page,
+		Limit:     limit,
+		Total:     total,
+	})
+}
+
 func (a *application) getPurchase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)

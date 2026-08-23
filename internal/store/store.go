@@ -75,6 +75,8 @@ type Store struct {
 		Create(ctx context.Context, purchase *Purchase, tickets []Ticket) error
 		GetByID(ctx context.Context, id, userID string) (*Purchase, error)
 		ListTicketsByPurchase(ctx context.Context, purchaseID string) ([]Ticket, error)
+		ListByUser(ctx context.Context, userID string, limit, offset int) ([]PurchaseSummary, error)
+		CountByUser(ctx context.Context, userID string) (int, error)
 	}
 }
 
