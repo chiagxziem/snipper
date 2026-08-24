@@ -88,6 +88,10 @@ type Store struct {
 		ListByUser(ctx context.Context, userID string, limit, offset int) ([]PurchaseSummary, error)
 		CountByUser(ctx context.Context, userID string) (int, error)
 		SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error)
+		HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error)
+	}
+	Waitlist interface {
+		Create(ctx context.Context, entry *WaitlistEntry) error
 	}
 }
 
@@ -100,5 +104,6 @@ func New(pool *pgxpool.Pool) Store {
 		Events:        &EventsStore{pool},
 		Tiers:         &TiersStore{pool},
 		Purchases:     &PurchasesStore{pool},
+		Waitlist:      &WaitlistStore{pool},
 	}
 }

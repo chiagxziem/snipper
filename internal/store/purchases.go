@@ -469,3 +469,23 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 
 	return purchase, nil
 }
+
+func (s *PurchasesStore) HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM purchases
+			WHERE user_id = $1 AND tier_id = $2 AND status = 'confirmed'
+		)
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	var exists bool
+	err := s.pool.QueryRow(ctx, query, userID, tierID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("store: has confirmed purchase: %w", err)
+	}
+
+	return exists, nil
+}

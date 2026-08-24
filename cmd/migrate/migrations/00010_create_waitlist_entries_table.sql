@@ -24,5 +24,5 @@ CREATE TRIGGER update_waitlist_entries_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- +goose Down
-DROP TABLE IF EXISTS sessions CASCADE;
-DROP TRIGGER IF EXISTS update_sessions_updated_at ON sessions;
+DROP TABLE IF EXISTS waitlist_entries CASCADE;
+DROP TRIGGER IF EXISTS update_waitlist_entries_updated_at ON waitlist_entries;
