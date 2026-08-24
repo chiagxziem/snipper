@@ -130,7 +130,8 @@ Invalid transitions are rejected with a `409 Conflict`.
 **Update policy (implemented):**
 
 - Draft events: fully editable.
-- Published / sold_out: material fields (`starts_at`, `ends_at`, `location`, `cancellation_allowed`, `cancellation_hours_before`) require `confirm_material_change: true` in the request, else `409`. Capacity cannot be lowered below tickets sold (Phase 9 wiring). Name, description, `max_tickets_per_purchase` editable anytime.
+- Published / sold_out: material fields (`starts_at`, `ends_at`, `location`, `cancellation_allowed`, `cancellation_hours_before`) require `confirm_material_change: true` in the request, else `409` (with the number of confirmed ticket holders affected in the message). Capacity cannot be lowered below tickets already sold. Name, description, `max_tickets_per_purchase` editable anytime.
+- A confirmed material change on a published/sold_out event stamps `material_changed_at`, opening a **72h cancellation grace window** for existing buyers — they may cancel even after the normal window closes (the window is effectively capped at the event start, since cancellation is impossible once it begins). Cosmetic-only updates never move the stamp.
 - Cancelled / ended: frozen, `409`.
 - Publish requires at least one tier.
 
@@ -255,8 +256,9 @@ Price in cents. If the event has a `capacity` set, the sum of all tier quantitie
 
 - Event must not have started
 - `cancellation_allowed` must be `true` on the event
-- Current time must be at least `cancellation_hours_before` hours before `starts_at`
-- On cancellation: inventory is restored, waitlist promotion is triggered
+- Valid cancellation window: within `cancellation_hours_before` hours of `starts_at`, OR within 72h of the event's last `material_changed_at` stamp (grace window for buyers whose deal changed)
+- Cancelling against an already-cancelled event is allowed; once started or ended it never is
+- On cancellation: purchase and its tickets flip to `cancelled`, inventory is restored to the tier, and a fully sold-out event reopens as `published`; waitlist promotion is triggered
 
 ### Waitlist — `/api/events/{id}/tiers/{tierId}/waitlist`
 
@@ -429,6 +431,7 @@ CREATE TABLE events (
   cancellation_allowed      BOOLEAN NOT NULL DEFAULT TRUE,
   cancellation_hours_before INTEGER NOT NULL DEFAULT 0,
   max_tickets_per_purchase  INTEGER NOT NULL DEFAULT 10,
+  material_changed_at       TIMESTAMPTZ,          -- NULL = no material change since publish
   created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -552,7 +555,7 @@ gater/
 │   │   ├── health.go        -- checkHealth
 │   │   ├── events.go        -- event handlers: createEvent, getEvent, updateEvent, deleteEvent, publishEvent, cancelEvent, getPublishedEvents, publicEvent
 │   │   ├── tiers.go         -- createTier, listTiers, updateTier, deleteTier
-│   │   ├── purchases.go     -- stub
+│   │   ├── purchases.go     -- createPurchase, listPurchases, getPurchase, cancelPurchase
 │   │   ├── waitlist.go      -- stub
 │   │   ├── check-in.go      -- stub
 │   │   ├── analytics.go     -- stub
@@ -578,7 +581,7 @@ gater/
 │   │   ├── resend.go        -- Resend client implementation
 │   │   └── templates/       -- verification.html, password-reset.html
 │   ├── qr/
-│   │   └── qr.go            -- HMAC-SHA256 token generation + verification (planned)
+│   │   └── qr.go            -- HMAC-SHA256 token generation + verification
 │   ├── store/
 │   │   ├── store.go         -- Store struct with per-domain interfaces + New()
 │   │   ├── users.go         -- UserStore + user queries
@@ -587,7 +590,7 @@ gater/
 │   │   ├── oauth.go         -- OAuthStore + oauth account queries
 │   │   ├── events.go        -- EventsStore + event queries
 │   │   ├── tiers.go         -- TiersStore + tier queries
-│   │   ├── purchases.go     -- PurchaseStore (planned)
+│   │   ├── purchases.go     -- PurchaseStore + purchase queries (incl. the Create/Cancel transactions)
 │   │   ├── tickets.go       -- TicketStore (planned)
 │   │   └── waitlist.go      -- WaitlistStore (planned)
 │   └── validator/
@@ -810,14 +813,16 @@ volumes:
 - Delete locked to draft events only
 - Publish gate: reject publish when the event has no tiers
 
-### Phase 9 — Purchases + Tickets (in progress)
+### Phase 9 — Purchases + Tickets ✅
 
-- `internal/qr/qr.go` — `GenerateToken()` + `VerifyToken()` using HMAC-SHA256 ✅
-- Implement `createPurchase` with `SELECT FOR UPDATE` transaction ✅
+- `internal/qr/qr.go` — `GenerateToken()` + `VerifyToken()` using HMAC-SHA256
+- Implement `createPurchase` with `SELECT FOR UPDATE` transaction
   - single tx: lock tier → authoritative checks → decrement inventory → insert purchase → batch-insert tickets (QR tokens signed by handler, DB values backfilled via `RETURNING`) → event `sold_out` flip
-- Cancellation policy enforcement on `cancelPurchase`
-- Inventory restoration + waitlist promotion trigger on cancellation
-- Implement `listPurchases`, `getPurchase`
+- Implement `getPurchase` (owner-scoped, 404 hides other users' purchases) and `listPurchases` (offset pagination — page/limit/total; a history archive reads better in pages than the events feed's cursor)
+- Cancellation policy enforcement on `cancelPurchase`: started/allowed/window gates, cancelled-event purchases cancellable, inventory restoration, event `sold_out → published` flip
+- Capacity floor on event updates: capacity can't drop below confirmed tickets sold
+- Material-change 409 reports affected ticket holders (zero-buyer case gets its own message)
+- Grace window: confirmed material changes stamp `material_changed_at`, letting buyers cancel up to 72h past the change (`Events.Update` preserves stamps via COALESCE)
 
 ### Phase 10 — Waitlist
 
