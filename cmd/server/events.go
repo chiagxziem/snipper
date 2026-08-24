@@ -211,7 +211,13 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// TODO (Phase 9): open a grace-period cancellation window for affected buyers
+		// a confirmed material change opens/reopens the buyers' 72h
+		// cancellation grace window
+		if changedMaterial {
+			now := time.Now()
+			event.MaterialChangedAt = &now
+		}
+
 		// TODO (Phase 12): enqueue buyer notification with a diff of the changed fields
 	default: // cancelled, ended
 		jsonutil.WriteError(w, http.StatusConflict, "event can no longer be updated")

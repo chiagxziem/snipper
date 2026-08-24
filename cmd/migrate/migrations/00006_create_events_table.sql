@@ -13,6 +13,7 @@ CREATE TABLE events (
   cancellation_allowed      BOOLEAN NOT NULL DEFAULT TRUE,
   cancellation_hours_before INTEGER NOT NULL DEFAULT 0,
   max_tickets_per_purchase  INTEGER NOT NULL DEFAULT 10,
+  material_changed_at       TIMESTAMPTZ,  -- NULL = no material change since publish
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
 

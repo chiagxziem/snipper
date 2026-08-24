@@ -18,20 +18,21 @@ type EventsStore struct {
 }
 
 type Event struct {
-	ID                      uuid.UUID `json:"id"`
-	OrganizerID             uuid.UUID `json:"organizer_id"`
-	Name                    string    `json:"name"`
-	Description             *string   `json:"description"`
-	Location                string    `json:"location"`
-	Status                  string    `json:"status"`
-	StartsAt                time.Time `json:"starts_at"`
-	EndsAt                  time.Time `json:"ends_at"`
-	Capacity                *int      `json:"capacity"`
-	CancellationAllowed     bool      `json:"cancellation_allowed"`
-	CancellationHoursBefore int       `json:"cancellation_hours_before"`
-	MaxTicketsPerPurchase   int       `json:"max_tickets_per_purchase"`
-	CreatedAt               time.Time `json:"created_at"`
-	UpdatedAt               time.Time `json:"updated_at"`
+	ID                      uuid.UUID  `json:"id"`
+	OrganizerID             uuid.UUID  `json:"organizer_id"`
+	Name                    string     `json:"name"`
+	Description             *string    `json:"description"`
+	Location                string     `json:"location"`
+	Status                  string     `json:"status"`
+	StartsAt                time.Time  `json:"starts_at"`
+	EndsAt                  time.Time  `json:"ends_at"`
+	Capacity                *int       `json:"capacity"`
+	CancellationAllowed     bool       `json:"cancellation_allowed"`
+	CancellationHoursBefore int        `json:"cancellation_hours_before"`
+	MaxTicketsPerPurchase   int        `json:"max_tickets_per_purchase"`
+	MaterialChangedAt       *time.Time `json:"material_changed_at"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 func (s *EventsStore) Create(ctx context.Context, event *Event) error {
@@ -44,7 +45,7 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
   `
 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
@@ -58,7 +59,7 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
 		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
 		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
 		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
-		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+		&event.MaxTicketsPerPurchase, &event.MaterialChangedAt, &event.CreatedAt, &event.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("store: create event: %w", err)
@@ -68,15 +69,19 @@ func (s *EventsStore) Create(ctx context.Context, event *Event) error {
 }
 
 func (s *EventsStore) Update(ctx context.Context, event *Event) error {
+	// COALESCE($11, material_changed_at): the handler only passes a stamp
+	// when a confirmed material change is landing; nil on every other update
+	// keeps any existing stamp intact instead of wiping grace windows away
 	query := `
     UPDATE events
     SET name = $2, description = $3, location = $4, starts_at = $5,
     ends_at = $6, capacity = $7, cancellation_allowed = $8,
-    cancellation_hours_before = $9, max_tickets_per_purchase = $10
+    cancellation_hours_before = $9, max_tickets_per_purchase = $10,
+    material_changed_at = COALESCE($11, material_changed_at)
     WHERE id = $1
     RETURNING id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
   `
 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
@@ -86,11 +91,12 @@ func (s *EventsStore) Update(ctx context.Context, event *Event) error {
 		ctx, query, event.ID, event.Name, event.Description, event.Location,
 		event.StartsAt, event.EndsAt, event.Capacity, event.CancellationAllowed,
 		event.CancellationHoursBefore, event.MaxTicketsPerPurchase,
+		event.MaterialChangedAt,
 	).Scan(
 		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
 		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
 		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
-		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+		&event.MaxTicketsPerPurchase, &event.MaterialChangedAt, &event.CreatedAt, &event.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("store: update event: %w", err)
@@ -126,7 +132,7 @@ func (s *EventsStore) Publish(ctx context.Context, id string) (*Event, error) {
     WHERE id = $1 AND status = 'draft'
     RETURNING id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
   `
 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
@@ -134,10 +140,11 @@ func (s *EventsStore) Publish(ctx context.Context, id string) (*Event, error) {
 
 	event := &Event{}
 	err := s.pool.QueryRow(ctx, query, id).Scan(
-		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
-		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
-		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
-		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+		&event.ID, &event.OrganizerID, &event.Name, &event.Description, &event.Location,
+		&event.Status, &event.StartsAt, &event.EndsAt, &event.Capacity,
+		&event.CancellationAllowed, &event.CancellationHoursBefore,
+		&event.MaxTicketsPerPurchase, &event.MaterialChangedAt,
+		&event.CreatedAt, &event.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -156,7 +163,7 @@ func (s *EventsStore) Cancel(ctx context.Context, id string) (*Event, error) {
     WHERE id = $1 AND status IN ('draft', 'published', 'sold_out')
     RETURNING id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
   `
 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
@@ -167,7 +174,7 @@ func (s *EventsStore) Cancel(ctx context.Context, id string) (*Event, error) {
 		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
 		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
 		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
-		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+		&event.MaxTicketsPerPurchase, &event.MaterialChangedAt, &event.CreatedAt, &event.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -200,7 +207,7 @@ func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
     FROM events
     WHERE id = $1
   `
@@ -213,7 +220,7 @@ func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 		&event.ID, &event.OrganizerID, &event.Name, &event.Description,
 		&event.Location, &event.Status, &event.StartsAt, &event.EndsAt,
 		&event.Capacity, &event.CancellationAllowed, &event.CancellationHoursBefore,
-		&event.MaxTicketsPerPurchase, &event.CreatedAt, &event.UpdatedAt,
+		&event.MaxTicketsPerPurchase, &event.MaterialChangedAt, &event.CreatedAt, &event.UpdatedAt,
 	)
 
 	if err != nil {
@@ -236,7 +243,7 @@ func (s EventsStore) GetAllPublished(
 	query := `
     SELECT id, organizer_id, name, description, location, status, starts_at,
     ends_at, capacity, cancellation_allowed, cancellation_hours_before,
-    max_tickets_per_purchase, created_at, updated_at
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
     FROM events
     WHERE status = 'published'
   `

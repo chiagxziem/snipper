@@ -24,6 +24,11 @@ var (
 
 var queryTimeoutDuration = time.Second * 5
 
+// materialChangeGracePeriod is how long buyers keep an extended right to
+// cancel after an organizer lands a confirmed material change on their
+// event. Capped at the event start.
+const materialChangeGracePeriod = time.Hour * 72
+
 const (
 	RoleOrganizer string = "organizer"
 	RoleAttendee  string = "attendee"

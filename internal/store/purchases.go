@@ -378,7 +378,8 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	// load the tier + event rules
 	const loadEventAndTierRules = `
     SELECT t.event_id, t.remaining, e.status, e.starts_at,
-           e.cancellation_allowed, e.cancellation_hours_before
+           e.cancellation_allowed, e.cancellation_hours_before,
+           e.material_changed_at
     FROM ticket_tiers t JOIN events e ON e.id = t.event_id
     WHERE t.id = $1
   `
@@ -387,8 +388,10 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	var eventStatus string
 	var cancellationAllowed bool
 	var startsAt time.Time
+	var materialChangedAt *time.Time
 	err = tx.QueryRow(ctx, loadEventAndTierRules, purchase.TierID).Scan(
-		&eventID, &remaining, &eventStatus, &startsAt, &cancellationAllowed, &cancellationHoursBefore,
+		&eventID, &remaining, &eventStatus, &startsAt,
+		&cancellationAllowed, &cancellationHoursBefore, &materialChangedAt,
 	)
 	// if the purchase that tierId is gotten from already exists,
 	// then the tier and the event definitely exists
@@ -397,14 +400,25 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 		return nil, fmt.Errorf("store: cancel purchase: load tier + event rules: %w", err)
 	}
 
-	// policy checks
+	// policy checks. hard gates first: once the event has started it's over
+	// regardless of anything else. this also caps the grace window below at
+	// the event start, so a late material change can't extend past it
 	now := time.Now()
 	switch {
 	case !now.Before(startsAt):
 		return nil, fmt.Errorf("store: cancel purchase: %w", ErrEventStarted)
 	case !cancellationAllowed:
 		return nil, fmt.Errorf("store: cancel purchase: %w", ErrCancellationNotAllowed)
-	case now.After(startsAt.Add(-time.Duration(cancellationHoursBefore) * time.Hour)):
+	}
+
+	// two ways to be inside a valid cancellation window:
+	//   normal — more than cancellation_hours_before remain until start
+	//   grace  — a confirmed material change landed recently; buyers who had
+	//            their deal changed get an extended right to walk away
+	windowClosed := now.After(startsAt.Add(-time.Duration(cancellationHoursBefore) * time.Hour))
+	graceOpen := materialChangedAt != nil &&
+		now.Before(materialChangedAt.Add(materialChangeGracePeriod))
+	if windowClosed && !graceOpen {
 		return nil, fmt.Errorf("store: cancel purchase: %w", ErrOutsideCancellationWindow)
 	}
 
