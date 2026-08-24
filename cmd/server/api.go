@@ -115,7 +115,9 @@ func (a *application) mount() http.Handler {
 			// protected events routes
 			r.Group(func(r chi.Router) {
 				r.Use(a.requireAuth)
+
 				r.Post("/{id}/tiers/{tierId}/waitlist", a.joinWaitlist)
+				r.Delete("/{id}/tiers/{tierId}/waitlist", a.leaveWaitlist)
 			})
 
 			// protected events routes (organizer required)

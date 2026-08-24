@@ -55,3 +55,23 @@ func (s *WaitlistStore) Create(ctx context.Context, entry *WaitlistEntry) error 
 
 	return nil
 }
+
+func (s *WaitlistStore) DeleteByUserAndTier(ctx context.Context, userID, tierID string) error {
+	query := `
+		DELETE FROM waitlist_entries
+		WHERE user_id = $1 AND tier_id = $2
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	ct, err := s.pool.Exec(ctx, query, userID, tierID)
+	if err != nil {
+		return fmt.Errorf("store: delete waitlist entry: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("store: delete waitlist entry: %w", ErrNotFound)
+	}
+
+	return nil
+}

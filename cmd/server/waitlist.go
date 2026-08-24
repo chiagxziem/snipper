@@ -10,19 +10,6 @@ import (
 	"github.com/goziemsunday/gater/internal/store"
 )
 
-// joinWaitlist puts the authenticated user in line for a sold-out tier.
-//
-// The gates, in order:
-//   - event must be publicly visible (getPublicEvent: draft/cancelled 404
-//     to non-organizers) and not ended
-//   - tier must exist AND belong to that event (404 otherwise, so tiers on
-//     other events aren't discoverable)
-//   - tier must actually be sold out — waitlisting an available tier is
-//     pointless, just buy
-//   - user must not already hold confirmed tickets for the tier
-//   - one entry per user per tier, enforced by a UNIQUE constraint and
-//     surfaced as ErrConflict → 409 (expired entries also block rejoin
-//     until Phase 12 adds conditional reset)
 func (a *application) joinWaitlist(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	logger := loggerFromCtx(ctx)
@@ -113,5 +100,49 @@ func (a *application) joinWaitlist(w http.ResponseWriter, r *http.Request) {
 	jsonutil.WriteData(w, http.StatusCreated, returnData{
 		Message: "you have been added to the waitlist",
 		Entry:   entry,
+	})
+}
+
+func (a *application) leaveWaitlist(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the authenticated user, set on the context by requireAuth
+	user, ok := ctx.Value(userCtx).(*store.User)
+	if !ok {
+		logger.Error("failed to get user from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	// ensure both route params are real UUIDs before hitting the DB
+	idParam := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(idParam); err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid event id")
+		return
+	}
+	tierIDParam := chi.URLParam(r, "tierId")
+	tierID, err := uuid.Parse(tierIDParam)
+	if err != nil {
+		jsonutil.WriteError(w, http.StatusBadRequest, "invalid tier id")
+		return
+	}
+
+	if err := a.store.Waitlist.DeleteByUserAndTier(ctx, user.ID.String(), tierID.String()); err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			jsonutil.WriteError(w, http.StatusNotFound, "you are not on the waitlist for this tier")
+		default:
+			logger.Error("failed to delete waitlist entry", "error", err, "user_id", user.ID, "tier_id", tierID)
+			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		}
+		return
+	}
+
+	type returnData struct {
+		Message string `json:"message"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message: "you have been removed from the waitlist",
 	})
 }
