@@ -26,6 +26,23 @@ type WaitlistEntry struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
+type WaitlistSummary struct {
+	ID         uuid.UUID  `json:"id"`
+	Status     string     `json:"status"`
+	NotifiedAt *time.Time `json:"notified_at"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	User       struct {
+		ID    uuid.UUID `json:"id"`
+		Name  string    `json:"name"`
+		Email string    `json:"email"`
+	} `json:"user"`
+	Tier struct {
+		ID   uuid.UUID `json:"id"`
+		Name string    `json:"name"`
+	} `json:"tier"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 func (s *WaitlistStore) Create(ctx context.Context, entry *WaitlistEntry) error {
 	query := `
 		INSERT INTO waitlist_entries (user_id, tier_id)
@@ -74,4 +91,50 @@ func (s *WaitlistStore) DeleteByUserAndTier(ctx context.Context, userID, tierID 
 	}
 
 	return nil
+}
+
+func (s *WaitlistStore) ListByEvent(ctx context.Context, eventID string) ([]WaitlistSummary, error) {
+	query := `
+		SELECT w.id, w.status, w.notified_at, w.expires_at,
+		u.id, u.name, u.email,
+		t.id, t.name,
+		w.created_at
+		FROM waitlist_entries w
+		JOIN users u ON u.id = w.user_id
+		JOIN ticket_tiers t ON t.id = w.tier_id
+		WHERE t.event_id = $1
+		ORDER BY w.created_at ASC
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list waitlist by event: %w", err)
+	}
+	defer rows.Close()
+
+	// non-nil so an empty waitlist marshals as [] not null
+	summaries := make([]WaitlistSummary, 0)
+
+	for rows.Next() {
+		var summary WaitlistSummary
+		err := rows.Scan(
+			&summary.ID, &summary.Status, &summary.NotifiedAt, &summary.ExpiresAt,
+			&summary.User.ID, &summary.User.Name, &summary.User.Email,
+			&summary.Tier.ID, &summary.Tier.Name,
+			&summary.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("store: list waitlist by event: %w", err)
+		}
+		summaries = append(summaries, summary)
+	}
+	// get errors the iteration itself hit
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list waitlist by event: %w", err)
+	}
+
+	return summaries, nil
 }

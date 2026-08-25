@@ -462,6 +462,10 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 		return nil, fmt.Errorf("store: cancel purchase: flip event status: %w", err)
 	}
 
+	// TODO (Phase 10/12): if this tier was sold_out, restored inventory
+	// should go to the queue — enqueue NotifyWaitlistEntry so the next
+	// 'waiting' entrant gets a 24h offer before stock goes back on general sale
+
 	// commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("store: cancel purchase: commit: %w", err)

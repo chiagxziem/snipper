@@ -146,3 +146,32 @@ func (a *application) leaveWaitlist(w http.ResponseWriter, r *http.Request) {
 		Message: "you have been removed from the waitlist",
 	})
 }
+
+func (a *application) getWaitlist(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := loggerFromCtx(ctx)
+
+	// the event, loaded by requireEventOrganizer
+	event, ok := ctx.Value(eventCtx).(*store.Event)
+	if !ok {
+		logger.Error("failed to get event from context")
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	entries, err := a.store.Waitlist.ListByEvent(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to list waitlist", "error", err, "event_id", event.ID)
+		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		return
+	}
+
+	type returnData struct {
+		Message  string                  `json:"message"`
+		Waitlist []store.WaitlistSummary `json:"waitlist"`
+	}
+	jsonutil.WriteData(w, http.StatusOK, returnData{
+		Message:  "waitlist retrieved successfully",
+		Waitlist: entries,
+	})
+}

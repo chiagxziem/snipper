@@ -93,6 +93,7 @@ type Store struct {
 	Waitlist interface {
 		Create(ctx context.Context, entry *WaitlistEntry) error
 		DeleteByUserAndTier(ctx context.Context, userID, tierID string) error
+		ListByEvent(ctx context.Context, eventID string) ([]WaitlistSummary, error)
 	}
 }
 
