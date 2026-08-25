@@ -270,7 +270,15 @@ The waitlist is for tiers that are sold out. A user either purchases a ticket or
 | `DELETE` | `/api/events/{id}/tiers/{tierId}/waitlist` | Attendee  | Leave the waitlist              |
 | `GET`    | `/api/events/{id}/waitlist`                | Organizer | View full waitlist for an event |
 
-**Waitlist promotion flow:**
+**Status (implemented):** all three entry-management endpoints are done.
+
+**Join rules:** event must be publicly visible (draft/cancelled 404 to non-organizers) and not ended; tier must belong to the route's event, be `sold_out` (`409` otherwise — buying beats queueing), and the user must not already hold confirmed tickets for it (`409`). `UNIQUE(user_id, tier_id)` allows one entry per user per tier — a duplicate join is a `409`, and **expired entries block rejoining until Phase 12** adds conditional reset (the expired state can't occur before promotion exists, so strict v1 costs nothing).
+
+**Leave rules:** hard delete of the caller's own `(user_id, tier_id)` row — pair-scoping collapses missing/foreign/nonexistent into one `404`; leaving a cancelled/ended event's waitlist stays allowed. Deleting frees the UNIQUE slot.
+
+**Organizer view:** FIFO across all tiers of the event (`created_at ASC`, matching future promotion order); each row carries buyer name/email, tier name, status, and `notified_at`/`expires_at` so organizers can see who holds a live offer.
+
+**Waitlist promotion flow (Phase 12):**
 
 1. Purchase is cancelled, inventory restored
 2. `NotifyWaitlistEntry` job enqueued via Asynq
@@ -556,7 +564,7 @@ gater/
 │   │   ├── events.go        -- event handlers: createEvent, getEvent, updateEvent, deleteEvent, publishEvent, cancelEvent, getPublishedEvents, publicEvent
 │   │   ├── tiers.go         -- createTier, listTiers, updateTier, deleteTier
 │   │   ├── purchases.go     -- createPurchase, listPurchases, getPurchase, cancelPurchase
-│   │   ├── waitlist.go      -- stub
+│   │   ├── waitlist.go      -- joinWaitlist, leaveWaitlist, getWaitlist
 │   │   ├── check-in.go      -- stub
 │   │   ├── analytics.go     -- stub
 │   │   ├── middleware.go    -- authenticate (shared core), requireAuth, maybeAuth, requireOrganizer, requireEventOrganizer, injectLogging
@@ -592,7 +600,7 @@ gater/
 │   │   ├── tiers.go         -- TiersStore + tier queries
 │   │   ├── purchases.go     -- PurchaseStore + purchase queries (incl. the Create/Cancel transactions)
 │   │   ├── tickets.go       -- TicketStore (planned)
-│   │   └── waitlist.go      -- WaitlistStore (planned)
+│   │   └── waitlist.go      -- WaitlistStore + waitlist queries
 │   └── validator/
 │       └── validator.go     -- go-playground/validator wrapper
 ├── requests/                       -- Bruno API requests
@@ -824,10 +832,11 @@ volumes:
 - Material-change 409 reports affected ticket holders (zero-buyer case gets its own message)
 - Grace window: confirmed material changes stamp `material_changed_at`, letting buyers cancel up to 72h past the change (`Events.Update` preserves stamps via COALESCE)
 
-### Phase 10 — Waitlist
+### Phase 10 — Waitlist (entry management) ✅
 
-- Implement `joinWaitlist`, `leaveWaitlist`, `getWaitlist`
+- Implement `joinWaitlist` (visibility + ended gates, sold-out-only, no-tickets check, unique-entry 409), `leaveWaitlist` (hard delete via pair-scoped DELETE), `getWaitlist` (organizer FIFO view with buyer identity + offer timestamps)
 - Waitlist entry validation — user must not already have a ticket for the tier
+- Promotion-on-cancellation deferred to Phase 12: TODO hook sits in `PurchasesStore.Cancel`; strict rejoin upgrade ships with the expiry worker
 
 ### Phase 11 — Check-in
 

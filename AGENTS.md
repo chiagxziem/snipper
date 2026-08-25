@@ -19,7 +19,7 @@ No tests, no linter, no formatter config.
 ## Architecture
 
 `cmd/server/` — `package main`, HTTP handlers, chi routing, middleware.  
-`internal/` — `config/` (godotenv), `db/` (pgxpool), `store/` (raw SQL via pgx, 5s per-query timeout; `users`, `sessions`, `verifications`, `oauth`, `events`, `tiers`, `purchases`), `auth/` (argon2id, SHA-256 tokens), `jsonutil/`, `validator/` (go-playground), `mailer/` (Resend), `qr/` (HMAC-SHA256 ticket tokens).  
+`internal/` — `config/` (godotenv), `db/` (pgxpool), `store/` (raw SQL via pgx, 5s per-query timeout; `users`, `sessions`, `verifications`, `oauth`, `events`, `tiers`, `purchases`, `waitlist`), `auth/` (argon2id, SHA-256 tokens), `jsonutil/`, `validator/` (go-playground), `mailer/` (Resend), `qr/` (HMAC-SHA256 ticket tokens).  
 `cmd/migrate/` — goose runner with embedded SQL.  
 `internal/cache/redis.go` exists but is **not wired into the app**.
 
@@ -35,6 +35,7 @@ Handlers manually wired into `application` struct in `main.go` — no DI framewo
 - **JSON response:** Success `{"data": ...}` via `WriteData`, errors `{"errors": [...]}` via `WriteError` (single msg) / `WriteErrors` (validation). Exception: health check uses bare `Write` → `{"status":"OK"}`.
 - **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL; `PurchasesStore.Create` and `.Cancel` are the only transactions so far (`pool.Begin` + deferred rollback inside one store method — handlers never see `pgx.Tx`).
 - **Purchases:** buying requires event `published` + tier `available` (authoritative inside the tx); `total` is computed from the locked tier price, never trusted from the client. Purchase history is offset-paginated (`page`/`limit`/`total`) — an archive reads better in pages than the cursor-style events feed. Cancellation policy: rejects once the event started or ended, honours `cancellation_hours_before` plus the 72h material-change grace window, allows cancelling against an already-cancelled event, restores inventory and reopens sold_out events.
+- **Waitlist:** sold-out tiers only (`409` otherwise); one entry per user per tier via `UNIQUE(user_id, tier_id)` — duplicates and expired entries 409 until Phase 12 adds conditional rejoin; leaving is a hard pair-scoped DELETE (no event/tier fetches needed — mismatches all collapse into one 404); organizer view is FIFO with buyer identity. Promotion-on-cancellation is a TODO in `PurchasesStore.Cancel` (Phase 10/12).
 - **Background email** uses `context.Background()`, errors only logged.
 - **Tier payloads:** `price`/`quantity` are pointers on create (omitted ≠ 0); update payloads are pointer-based so omitted fields stay unchanged.
 - **Tier updates:** `name`/`price` editable anytime (purchase totals are stored per purchase); `quantity` must stay `>= sold` (422) with `remaining` recomputed; capacity check nets out the tier's old quantity; tier `sold_out → available` and event `sold_out → published` flips on quantity increase; delete is draft-only; cancelled/ended events freeze all tier edits (409).
@@ -63,14 +64,17 @@ GET    /api/purchases                   (protected; offset-paginated history: pa
 POST   /api/purchases                   (protected; tx: tier lock → checks → decrement → tickets)
 GET    /api/purchases/{id}              (protected; owner-scoped 404, full event/tier/tickets nested)
 POST   /api/purchases/{id}/cancel       (protected; policy tx: gates → flip → restore → reopen)
+POST   /api/events/{id}/tiers/{tierId}/waitlist  (protected attendee route; sold-out tiers only)
+DELETE /api/events/{id}/tiers/{tierId}/waitlist  (protected; hard delete, own row only)
+GET    /api/events/{id}/waitlist                 (organizer; FIFO with buyer identity)
 ```
 
 ## Implemented vs stubs
 
 | File                                                                                  | Status      |
 | ------------------------------------------------------------------------------------- | ----------- |
-| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`, `purchases.go` | Implemented |
-| `check-in.go`, `waitlist.go`, `analytics.go`                                           | Empty stubs |
+| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`, `purchases.go`, `waitlist.go` | Implemented |
+| `check-in.go`, `analytics.go`                                                          | Empty stubs |
 
 ## Requests
 
