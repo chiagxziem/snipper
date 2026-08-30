@@ -288,11 +288,13 @@ The waitlist is for tiers that are sold out. A user either purchases a ticket or
 6. If user purchases in time: entry status → `purchased`
 7. If `expires_at` passes without purchase: `ExpireWaitlistReservations` worker sets status → `expired`, promotes next person
 
-### Check-in — `/api/checkin`
+### Check-in — `/api/events/{id}/checkin`
 
 | Method | Path           | Auth      | Description                    |
 | ------ | -------------- | --------- | ------------------------------ |
-| `POST` | `/api/checkin` | Organizer | Check in a ticket via QR token |
+| `POST` | `/api/events/{id}/checkin` | Organizer (event owner) | Check in a ticket via QR token |
+
+> **Deviation from original plan:** flat `/api/checkin` → event-scoped `/api/events/{id}/checkin` (inside `requireEventOrganizer`). The `wrong event` reason needs the door's event ID; scoping the route gives it via `eventCtx` with ownership enforced, rather than trusting a body field.
 
 **Check-in request:**
 
@@ -330,7 +332,9 @@ The waitlist is for tiers that are sold out. A user either purchases a ticket or
 
 Possible reasons: `already checked in`, `ticket cancelled`, `invalid token`, `wrong event`.
 
-The check-in lookup and status update happen in a single transaction with `SELECT FOR UPDATE` — two scanners at different doors cannot both successfully check in the same ticket.
+**Status (implemented):** `POST /api/events/{id}/checkin` with Option A response shape — `qr.VerifyToken` + `TicketsStore.CheckIn` fat tx (`FOR UPDATE OF t`, scoped lock). Domain outcomes (`invalid token`, `already checked in`, `ticket cancelled`, `wrong event`) return **200** `{valid:false, reason}`; only malformed JSON hits the standard `{"errors":[...]}` envelope. `checked_in_at` nests inside `ticket`.
+
+The check-in lookup and status update happen in a single transaction with `SELECT FOR UPDATE OF t` — two scanners at different doors cannot both successfully check in the same ticket (the row-level lock serializes them).
 
 ### Organizer Events — `/api/organizer/events`
 
@@ -565,7 +569,8 @@ gater/
 │   │   ├── tiers.go         -- createTier, listTiers, updateTier, deleteTier
 │   │   ├── purchases.go     -- createPurchase, listPurchases, getPurchase, cancelPurchase
 │   │   ├── waitlist.go      -- joinWaitlist, leaveWaitlist, getWaitlist
-│   │   ├── check-in.go      -- stub
+│   │   ├── check-in.go      -- checkIn (event-scoped, always-200 valid/reason)
+│   │   ├── check-in.go      -- checkIn (event-scoped, always-200 valid/reason)
 │   │   ├── analytics.go     -- stub
 │   │   ├── middleware.go    -- authenticate (shared core), requireAuth, maybeAuth, requireOrganizer, requireEventOrganizer, injectLogging
 │   │   └── docs.go          -- scalarDocs, openAPISpec (planned)
@@ -599,8 +604,7 @@ gater/
 │   │   ├── events.go        -- EventsStore + event queries
 │   │   ├── tiers.go         -- TiersStore + tier queries
 │   │   ├── purchases.go     -- PurchaseStore + purchase queries (incl. the Create/Cancel transactions)
-│   │   ├── tickets.go       -- TicketStore (planned)
-│   │   └── waitlist.go      -- WaitlistStore + waitlist queries
+│   │   ├── tickets.go       -- TicketsStore + ticket queries (CheckIn tx)
 │   └── validator/
 │       └── validator.go     -- go-playground/validator wrapper
 ├── requests/                       -- Bruno API requests
@@ -838,11 +842,11 @@ volumes:
 - Waitlist entry validation — user must not already have a ticket for the tier
 - Promotion-on-cancellation deferred to Phase 12: TODO hook sits in `PurchasesStore.Cancel`; strict rejoin upgrade ships with the expiry worker
 
-### Phase 11 — Check-in
+### Phase 11 — Check-in ✅
 
-- Implement `checkIn` handler with QR token verification
-- `SELECT FOR UPDATE` on ticket row to prevent duplicate check-ins
-- Return descriptive errors for all invalid cases
+- Implement `checkIn` handler with QR token verification (`qr.VerifyToken` → Option A, always-200 `{valid, reason/attendee/ticket}` shape)
+- Fat tx `TicketsStore.CheckIn` (`FOR UPDATE OF t`, scoped lock) prevents duplicate check-ins; gates inside tx: `used` → `already checked in`, `cancelled` → `ticket cancelled`, tier's event vs door's event → `wrong event`
+- Ticket moves to tickets.go (`TicketsStore` + `Ticket` + `TicketCheckIn`); `Tickets` interface wired in `Store`
 
 ### Phase 12 — Background Jobs (Asynq)
 

@@ -19,7 +19,7 @@ No tests, no linter, no formatter config.
 ## Architecture
 
 `cmd/server/` — `package main`, HTTP handlers, chi routing, middleware.  
-`internal/` — `config/` (godotenv), `db/` (pgxpool), `store/` (raw SQL via pgx, 5s per-query timeout; `users`, `sessions`, `verifications`, `oauth`, `events`, `tiers`, `purchases`, `waitlist`), `auth/` (argon2id, SHA-256 tokens), `jsonutil/`, `validator/` (go-playground), `mailer/` (Resend), `qr/` (HMAC-SHA256 ticket tokens).  
+`internal/` — `config/` (godotenv), `db/` (pgxpool), `store/` (raw SQL via pgx, 5s per-query timeout; `users`, `sessions`, `verifications`, `oauth`, `events`, `tiers`, `purchases`, `waitlist`, `tickets`), `auth/` (argon2id, SHA-256 tokens), `jsonutil/`, `validator/` (go-playground), `mailer/` (Resend), `qr/` (HMAC-SHA256 ticket tokens).  
 `cmd/migrate/` — goose runner with embedded SQL.  
 `internal/cache/redis.go` exists but is **not wired into the app**.
 
@@ -32,8 +32,9 @@ Handlers manually wired into `application` struct in `main.go` — no DI framewo
 - **Public-event visibility:** draft/cancelled events return 404 to non-organizers (no existence leak). `publicEvent` helper enforces this on public routes.
 - **Event updates:** draft events are fully editable. Published/sold_out: material fields (dates, location, cancellation policy) need `confirm_material_change: true`, capacity can't drop below tickets sold, and a confirmed material change stamps `material_changed_at` — opening a 72h purchase-cancellation grace window (preserved via COALESCE on cosmetic updates); cancelled/ended events are frozen (409). Name/description/max_tickets editable anytime.
 - **Cookie** `gater_auth_session` set on login (HttpOnly, Lax, 30d, Secure only in production, `SameSite=Lax`). CORS `AllowCredentials: true` lets browsers send it cross-origin.
-- **JSON response:** Success `{"data": ...}` via `WriteData`, errors `{"errors": [...]}` via `WriteError` (single msg) / `WriteErrors` (validation). Exception: health check uses bare `Write` → `{"status":"OK"}`.
-- **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL; `PurchasesStore.Create` and `.Cancel` are the only transactions so far (`pool.Begin` + deferred rollback inside one store method — handlers never see `pgx.Tx`).
+- **JSON response:** Success `{"data": ...}` via `WriteData`, errors `{"errors": [...]}` via `WriteError` (single msg) / `WriteErrors` (validation). Exceptions: health check uses bare `Write` → `{"status":"OK"}`; check-in uses always-200 Option A (`{"valid": true/false}`) — domain outcomes are expected scan results, not HTTP errors.
+- **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL; `PurchasesStore.Create`, `PurchasesStore.Cancel`, and `TicketsStore.CheckIn` are the only transactions so far (`pool.Begin` + deferred rollback inside one store method — handlers never see `pgx.Tx`).
+- **Check-in:** event-scoped `POST /api/events/{id}/checkin` (inside `requireEventOrganizer` — wrong-event detection uses `eventCtx`; deviation from PLAN's flat `/api/checkin`). Single tx with `SELECT FOR UPDATE OF t` (scoped to the ticket row only). Responses are always-200 `{"data": {"valid": ...}}` (Option A) — domain outcomes (`invalid token`, `already checked in`, `ticket cancelled`, `wrong event`) return `{"valid": false, "reason": ...}`; only malformed JSON hits the standard `{"errors": [...]}` envelope.
 - **Purchases:** buying requires event `published` + tier `available` (authoritative inside the tx); `total` is computed from the locked tier price, never trusted from the client. Purchase history is offset-paginated (`page`/`limit`/`total`) — an archive reads better in pages than the cursor-style events feed. Cancellation policy: rejects once the event started or ended, honours `cancellation_hours_before` plus the 72h material-change grace window, allows cancelling against an already-cancelled event, restores inventory and reopens sold_out events.
 - **Waitlist:** sold-out tiers only (`409` otherwise); one entry per user per tier via `UNIQUE(user_id, tier_id)` — duplicates and expired entries 409 until Phase 12 adds conditional rejoin; leaving is a hard pair-scoped DELETE (no event/tier fetches needed — mismatches all collapse into one 404); organizer view is FIFO with buyer identity. Promotion-on-cancellation is a TODO in `PurchasesStore.Cancel` (Phase 10/12).
 - **Background email** uses `context.Background()`, errors only logged.
@@ -67,14 +68,15 @@ POST   /api/purchases/{id}/cancel       (protected; policy tx: gates → flip �
 POST   /api/events/{id}/tiers/{tierId}/waitlist  (protected attendee route; sold-out tiers only)
 DELETE /api/events/{id}/tiers/{tierId}/waitlist  (protected; hard delete, own row only)
 GET    /api/events/{id}/waitlist                 (organizer; FIFO with buyer identity)
+POST   /api/events/{id}/checkin                  (organizer; event-scoped, always-200 valid/reason)
 ```
 
 ## Implemented vs stubs
 
 | File                                                                                  | Status      |
 | ------------------------------------------------------------------------------------- | ----------- |
-| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`, `purchases.go`, `waitlist.go` | Implemented |
-| `check-in.go`, `analytics.go`                                                          | Empty stubs |
+| `auth.go`, `users.go`, `health.go`, `middleware.go`, `events.go`, `tiers.go`, `purchases.go`, `waitlist.go`, `check-in.go` | Implemented |
+| `analytics.go`                                                                          | Empty stub  |
 
 ## Requests
 
