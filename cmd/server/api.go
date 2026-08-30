@@ -136,6 +136,7 @@ func (a *application) mount() http.Handler {
 					r.Post("/{id}/publish", a.publishEvent)
 					r.Post("/{id}/cancel", a.cancelEvent)
 					r.Get("/{id}/waitlist", a.getWaitlist)
+					r.Post("/{id}/checkin", a.checkIn)
 
 					// tiers
 					r.Group(func(r chi.Router) {

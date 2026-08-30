@@ -13,8 +13,11 @@ import (
 var (
 	ErrConflict                  = errors.New("resource already exists")
 	ErrNotFound                  = errors.New("resource not found")
+	ErrWrongEvent                = errors.New("ticket does not belong to this event")
 	ErrEventStarted              = errors.New("event has already started")
+	ErrTicketCancelled           = errors.New("ticket has been cancelled")
 	ErrAlreadyCancelled          = errors.New("purchase has already been cancelled")
+	ErrAlreadyCheckedIn          = errors.New("ticket has already been checked in")
 	ErrEventNotPublished         = errors.New("event is not open for ticket sales")
 	ErrInsufficientRemaining     = errors.New("not enough tickets remaining")
 	ErrExceedsMaxPerPurchase     = errors.New("quantity exceeds the maximum tickets per purchase")
@@ -95,6 +98,9 @@ type Store struct {
 		DeleteByUserAndTier(ctx context.Context, userID, tierID string) error
 		ListByEvent(ctx context.Context, eventID string) ([]WaitlistSummary, error)
 	}
+	Tickets interface {
+		CheckIn(ctx context.Context, ticketID, eventID uuid.UUID) (*TicketCheckIn, error)
+	}
 }
 
 func New(pool *pgxpool.Pool) Store {
@@ -107,5 +113,6 @@ func New(pool *pgxpool.Pool) Store {
 		Tiers:         &TiersStore{pool},
 		Purchases:     &PurchasesStore{pool},
 		Waitlist:      &WaitlistStore{pool},
+		Tickets:       &TicketsStore{pool},
 	}
 }

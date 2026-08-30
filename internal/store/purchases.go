@@ -26,17 +26,6 @@ type Purchase struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type Ticket struct {
-	ID          uuid.UUID  `json:"id"`
-	PurchaseID  uuid.UUID  `json:"purchase_id"`
-	TierID      uuid.UUID  `json:"tier_id"`
-	QRToken     string     `json:"qr_token"`
-	Status      string     `json:"status"`
-	CheckedInAt *time.Time `json:"checked_in_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-}
-
 // tickets are excluded entirely from the purchase summary, because
 // QR tokens are bulky and belong behind /purchases/{id}.
 type PurchaseSummary struct {
