@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/goziemsunday/gater/internal/cache"
 	"github.com/goziemsunday/gater/internal/config"
 	"github.com/goziemsunday/gater/internal/db"
 	"github.com/goziemsunday/gater/internal/mailer"
 	"github.com/goziemsunday/gater/internal/store"
 	"github.com/goziemsunday/gater/internal/validator"
+	"github.com/goziemsunday/gater/internal/worker"
 )
 
 func main() {
@@ -42,11 +44,32 @@ func main() {
 
 	validator := validator.New()
 
+	redisClient, err := cache.NewRedisClient(ctx, cfg)
+	if err != nil {
+		logger.Error("failed to create redis client", "error", err)
+		os.Exit(1)
+	}
+  defer redisClient.Close()
+
+	// must be init after mailer and before worker server
+	workerClient := worker.NewClient(redisClient)
+	defer workerClient.Close()
+
+	workerServer := worker.NewServer(redisClient)
+	go func() {
+		if err := workerServer.Run(worker.NewServeMux(emailer)); err != nil {
+			logger.Error("failed to run worker (asynq) server", "error", err)
+			os.Exit(1)
+		}
+	}()
+	defer workerServer.Shutdown()
+
 	// init app
 	app := &application{
 		config:    cfg,
 		store:     dbStore,
 		mailer:    emailer,
+		worker:    workerClient,
 		validator: validator,
 		logger:    logger,
 	}

@@ -18,12 +18,14 @@ import (
 	"github.com/goziemsunday/gater/internal/mailer"
 	"github.com/goziemsunday/gater/internal/store"
 	"github.com/goziemsunday/gater/internal/validator"
+	"github.com/hibiken/asynq"
 )
 
 type application struct {
 	config    *config.Config
 	store     store.Store
 	mailer    mailer.Mailer
+	worker    *asynq.Client
 	validator validator.Validator
 	logger    *slog.Logger
 }

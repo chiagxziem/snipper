@@ -1,10 +1,10 @@
 package main
 
 import (
-	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -13,6 +13,7 @@ import (
 	"github.com/goziemsunday/gater/internal/auth"
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/store"
+	"github.com/goziemsunday/gater/internal/worker"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -86,14 +87,36 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		err := a.mailer.SendVerificationEmail(
-			context.Background(), []string{user.Email}, user.Name, token.Plaintext,
+	sendVerificationTask, err := worker.NewSendVerificationTask(
+		[]string{user.Email},
+		user.Name,
+		token.Plaintext,
+	)
+	if err != nil {
+		logger.Error(
+			fmt.Sprintf("failed to create %s task", worker.TypeSendVerificationEmail),
+			"error", err,
+			"username", user.Name,
 		)
+		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		// return
+	} else {
+		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
 		if err != nil {
-			logger.Error("failed to send verification mail", "error", err)
+			logger.Error(
+				fmt.Sprintf("failed to enqueue %s task", worker.TypeSendVerificationEmail),
+				"error", err,
+				"username", user.Name,
+			)
+			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+			// return
 		}
-	}()
+		logger.Info(
+			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
+			"id", taskInfo.ID,
+			"queue", taskInfo.Queue,
+		)
+	}
 
 	type returnData struct {
 		Message string      `json:"message"`
@@ -423,14 +446,35 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	go func() {
-		err := a.mailer.SendVerificationEmail(
-			context.Background(), []string{user.Email}, user.Name, token.Plaintext,
+	sendVerificationTask, err := worker.NewSendVerificationTask(
+		[]string{user.Email},
+		user.Name, token.Plaintext,
+	)
+	if err != nil {
+		logger.Error(
+			"failed to create 'send verification email' task",
+			"error", err,
+			"username", user.Name,
 		)
+		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		// return
+	} else {
+		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
 		if err != nil {
-			logger.Error("failed to send verification mail", "error", err)
+			logger.Error(
+				"failed to enqueue 'send verification email' task",
+				"error", err,
+				"username", user.Name,
+			)
+			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+			// return
 		}
-	}()
+		logger.Info(
+			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
+			"id", taskInfo.ID,
+			"queue", taskInfo.Queue,
+		)
+	}
 
 	jsonutil.WriteData(w, http.StatusOK, returnData{Message: successMsg})
 }
@@ -523,14 +567,36 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		err := a.mailer.SendPasswordResetEmail(
-			context.Background(), []string{user.Email}, user.Name, token.Plaintext,
+	sendPwdResetTask, err := worker.NewSendPwdResetTask(
+		[]string{user.Email},
+		user.Name,
+		token.Plaintext,
+	)
+	if err != nil {
+		logger.Error(
+			fmt.Sprintf("failed to create %s task", worker.TypeSendPasswordResetEmail),
+			"error", err,
+			"username", user.Name,
 		)
+		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+		// return
+	} else {
+		taskInfo, err := a.worker.Enqueue(sendPwdResetTask)
 		if err != nil {
-			logger.Error("failed to send password reset mail", "error", err)
+			logger.Error(
+				fmt.Sprintf("failed to enqueue %s task", worker.TypeSendPasswordResetEmail),
+				"error", err,
+				"username", user.Name,
+			)
+			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
+			// return
 		}
-	}()
+		logger.Info(
+			fmt.Sprintf("enqueued %s task", worker.TypeSendPasswordResetEmail),
+			"id", taskInfo.ID,
+			"queue", taskInfo.Queue,
+		)
+	}
 
 	jsonutil.WriteData(w, http.StatusOK, returnData{Message: successMsg})
 }
