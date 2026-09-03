@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"text/template"
+	"html/template"
+	"time"
 
 	"github.com/goziemsunday/gater/internal/config"
 	"github.com/resend/resend-go/v3"
@@ -86,4 +87,29 @@ func (r *resendClient) SendPasswordResetEmail(
 	}
 
 	return r.SendEmail(ctx, to, "Reset your password", body.String())
+}
+
+func (r *resendClient) SendWaitlistNotification(
+	ctx context.Context,
+	to []string,
+	name, tierName, eventName string,
+	expiresAt time.Time,
+) error {
+	tmpl, err := template.ParseFS(templates, "templates/waitlist-available.html")
+	if err != nil {
+		return fmt.Errorf("mailer: parse template: %w", err)
+	}
+
+	var body bytes.Buffer
+	err = tmpl.Execute(&body, map[string]string{
+		"Name":      name,
+		"TierName":  tierName,
+		"EventName": eventName,
+		"ExpiresAt": expiresAt.UTC().Format("Mon, 02 Jan 2006 15:04 UTC"),
+	})
+	if err != nil {
+		return fmt.Errorf("mailer: execute template: %w", err)
+	}
+
+	return r.SendEmail(ctx, to, "A ticket is now available — "+eventName, body.String())
 }

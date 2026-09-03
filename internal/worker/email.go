@@ -37,7 +37,7 @@ func NewSendVerificationTask(
 	return asynq.NewTask(TypeSendVerificationEmail, payload), nil
 }
 
-func HandleSendVerificationTask(m mailer.Mailer) func(context.Context, *asynq.Task) error {
+func HandleSendVerificationTask(m mailer.Mailer) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p SendVerificationPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {
@@ -68,7 +68,7 @@ func NewSendPwdResetTask(
 	return asynq.NewTask(TypeSendPasswordResetEmail, payload), nil
 }
 
-func HandleSendPwdResetTask(m mailer.Mailer) func(context.Context, *asynq.Task) error {
+func HandleSendPwdResetTask(m mailer.Mailer) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var p SendPasswordResetPayload
 		if err := json.Unmarshal(t.Payload(), &p); err != nil {

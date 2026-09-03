@@ -73,6 +73,7 @@ type Store struct {
 		Publish(ctx context.Context, id string) (*Event, error)
 		Cancel(ctx context.Context, id string) (*Event, error)
 		SetStatus(ctx context.Context, id, from, to string) error
+		EndAllExpired(ctx context.Context) ([]*Event, error)
 	}
 	Tiers interface {
 		Create(ctx context.Context, tier *Tier) error
@@ -97,6 +98,10 @@ type Store struct {
 		Create(ctx context.Context, entry *WaitlistEntry) error
 		DeleteByUserAndTier(ctx context.Context, userID, tierID string) error
 		ListByEvent(ctx context.Context, eventID string) ([]WaitlistSummary, error)
+		ExpireReservations(ctx context.Context) ([]*WaitlistEntry, error)
+		NotifyNextWaiting(ctx context.Context, tierID uuid.UUID) (
+			*WaitlistEntry, *User, string, string, error,
+		)
 	}
 	Tickets interface {
 		CheckIn(ctx context.Context, ticketID, eventID uuid.UUID) (*TicketCheckIn, error)

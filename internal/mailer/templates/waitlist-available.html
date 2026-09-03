@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ticket available — {{ .EventName }}</title>
+  </head>
+  <body>
+    <h1>Good news, {{ .Name }}!</h1>
+    <p>Hi <strong>{{ .Name }}</strong>,</p>
+    <p>
+      A ticket for <strong>{{ .TierName }}</strong> at
+      <strong>{{ .EventName }}</strong> just became available. You are next
+      on the waitlist.
+    </p>
+    <p>
+      Please complete your purchase before <strong>{{ .ExpiresAt }}</strong>.
+      After that, your reservation will expire and the ticket will be offered
+      to the next person in line.
+    </p>
+    <div class="footer">
+      <p>If you no longer want this ticket, you can safely ignore this email.</p>
+    </div>
+  </body>
+</html>

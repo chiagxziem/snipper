@@ -1012,7 +1012,3 @@ Currently tiers are listed in `created_at` order. To let organizers control orde
 - Expose `sort_order` as a PATCH-able field on tier updates (or a dedicated reorder endpoint)
 
 Explicit position is preferred over inferring order from `price`, since multiple tiers can share a price.
-
-```
-
-```

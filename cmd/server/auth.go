@@ -98,8 +98,6 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 			"error", err,
 			"username", user.Name,
 		)
-		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-		// return
 	} else {
 		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
 		if err != nil {
@@ -108,8 +106,6 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 				"error", err,
 				"username", user.Name,
 			)
-			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-			// return
 		}
 		logger.Info(
 			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
@@ -456,8 +452,6 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 			"error", err,
 			"username", user.Name,
 		)
-		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-		// return
 	} else {
 		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
 		if err != nil {
@@ -466,8 +460,6 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 				"error", err,
 				"username", user.Name,
 			)
-			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-			// return
 		}
 		logger.Info(
 			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
@@ -578,8 +570,6 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 			"error", err,
 			"username", user.Name,
 		)
-		// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-		// return
 	} else {
 		taskInfo, err := a.worker.Enqueue(sendPwdResetTask)
 		if err != nil {
@@ -588,8 +578,6 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 				"error", err,
 				"username", user.Name,
 			)
-			// jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
-			// return
 		}
 		logger.Info(
 			fmt.Sprintf("enqueued %s task", worker.TypeSendPasswordResetEmail),

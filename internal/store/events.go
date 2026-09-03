@@ -235,7 +235,7 @@ func (s *EventsStore) GetByID(ctx context.Context, id string) (*Event, error) {
 	return event, nil
 }
 
-func (s EventsStore) GetAllPublished(
+func (s *EventsStore) GetAllPublished(
 	ctx context.Context,
 	cursor *cursor.Cursor,
 	limit int,
@@ -269,6 +269,33 @@ func (s EventsStore) GetAllPublished(
 	events, err := pgx.CollectRows(rows, pgx.RowToAddrOf[Event])
 	if err != nil {
 		return nil, fmt.Errorf("store: collect published events: %w", err)
+	}
+
+	return events, nil
+}
+
+func (s *EventsStore) EndAllExpired(ctx context.Context) ([]*Event, error) {
+	query := `
+    UPDATE events SET status = 'ended'
+    WHERE status IN ('published', 'sold_out')
+      AND ends_at < NOW()
+    RETURNING id, organizer_id, name, description, location, status, starts_at,
+    ends_at, capacity, cancellation_allowed, cancellation_hours_before,
+    max_tickets_per_purchase, material_changed_at, created_at, updated_at
+  `
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("store: end all expired events: %w", err)
+	}
+	defer rows.Close()
+
+	events, err := pgx.CollectRows(rows, pgx.RowToAddrOf[Event])
+	if err != nil {
+		return nil, fmt.Errorf("store: end all expired events: %w", err)
 	}
 
 	return events, nil
