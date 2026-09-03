@@ -12,6 +12,7 @@ import (
 	"github.com/goziemsunday/gater/internal/cursor"
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/store"
+	"github.com/goziemsunday/gater/internal/worker"
 )
 
 type CreateEventPayload struct {
@@ -132,6 +133,9 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// snapshot material fields before merge for per-buyer notification diff
+	oldEvent := *event
+
 	// merge the non-nil fields onto the current event; material fields are
 	// tracked so the published-event gate can reject them without confirmation
 	changedMaterial := false
@@ -217,8 +221,6 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			event.MaterialChangedAt = &now
 		}
-
-		// TODO (Phase 12): enqueue buyer notification with a diff of the changed fields
 	default: // cancelled, ended
 		jsonutil.WriteError(w, http.StatusConflict, "event can no longer be updated")
 		return
@@ -228,6 +230,54 @@ func (a *application) updateEvent(w http.ResponseWriter, r *http.Request) {
 		logger.Error("failed to update event", "error", err, "event_id", event.ID)
 		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
+	}
+
+	// send out notification emails to each buyer for confirmed material
+	// changes (published/sold_out only)
+	if changedMaterial && event.MaterialChangedAt != nil {
+		changedFields := make(map[string]string)
+
+		if payload.Location != nil {
+			changedFields["location"] = fmt.Sprintf("%s → %s", oldEvent.Location, event.Location)
+		}
+		if payload.StartsAt != nil {
+			changedFields["starts_at"] = fmt.Sprintf("%s → %s", oldEvent.StartsAt.UTC().Format(time.RFC3339), event.StartsAt.UTC().Format(time.RFC3339))
+		}
+		if payload.EndsAt != nil {
+			changedFields["ends_at"] = fmt.Sprintf("%s → %s", oldEvent.EndsAt.UTC().Format(time.RFC3339), event.EndsAt.UTC().Format(time.RFC3339))
+		}
+		if payload.CancellationAllowed != nil {
+			changedFields["cancellation_allowed"] = fmt.Sprintf("%v → %v", oldEvent.CancellationAllowed, event.CancellationAllowed)
+		}
+		if payload.CancellationHoursBefore != nil {
+			changedFields["cancellation_hours_before"] = fmt.Sprintf("%d → %d", oldEvent.CancellationHoursBefore, event.CancellationHoursBefore)
+		}
+		if len(changedFields) > 0 {
+			task, err := worker.NewNotifyBuyersUpdatedTask(event.ID, event.Name, changedFields, *event.MaterialChangedAt)
+			if err != nil {
+				logger.Error(
+					fmt.Sprintf("failed to create %s task", worker.TypeNotifyBuyersUpdated),
+					"error", err,
+					"event_id", event.ID,
+				)
+			} else {
+				taskInfo, err := a.worker.Enqueue(task)
+				if err != nil {
+					logger.Error(
+						fmt.Sprintf("failed to enqueue %s task", worker.TypeNotifyBuyersUpdated),
+						"error", err,
+						"event_id", event.ID,
+					)
+				} else {
+					logger.Info(
+						fmt.Sprintf("enqueued %s task", worker.TypeNotifyBuyersUpdated),
+						"queue", taskInfo.Queue,
+						"event_id", event.ID,
+						"fields", changedFields,
+					)
+				}
+			}
+		}
 	}
 
 	type returnData struct {

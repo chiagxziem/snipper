@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event updated — {{ .EventName }}</title>
+  </head>
+  <body>
+    <h1>Event Update</h1>
+    <p>Hi <strong>{{ .Name }}</strong>,</p>
+    <p>
+      The event <strong>{{ .EventName }}</strong> you have tickets for has
+      been updated by the organizer. Changed fields:
+    </p>
+    <pre>{{ .ChangedFields }}</pre>
+    <p>This change was made on <strong>{{ .MaterialChanged }}</strong>.</p>
+    <p>
+      Because your deal changed, you have an extended right to cancel your
+      purchase until <strong>{{ .GraceUntil }}</strong> — even if the normal
+      cancellation window has closed. This right is capped at the event's
+      start time.
+    </p>
+    <div class="footer">
+      <p>If this change works for you, no action is needed.</p>
+    </div>
+  </body>
+</html>

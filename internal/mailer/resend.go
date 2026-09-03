@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"strings"
 	"time"
 
 	"github.com/goziemsunday/gater/internal/config"
@@ -112,4 +113,40 @@ func (r *resendClient) SendWaitlistNotification(
 	}
 
 	return r.SendEmail(ctx, to, "A ticket is now available — "+eventName, body.String())
+}
+
+func (r *resendClient) SendEventUpdatedNotification(
+	ctx context.Context,
+	to []string,
+	name, eventName string,
+	changedFields map[string]string,
+	materialChangedAt time.Time,
+) error {
+	tmpl, err := template.ParseFS(templates, "templates/event-updated.html")
+	if err != nil {
+		return fmt.Errorf("mailer: parse template: %w", err)
+	}
+
+	var body bytes.Buffer
+	// join changed fields into a readable list for the template
+	var changedList strings.Builder
+	for k, v := range changedFields {
+		fmt.Fprintf(&changedList, "%s: %s\n", k, v)
+	}
+	// grace deadline is 72h from the stamp, capped at event start by the
+	// cancellation policy, but we surface the raw deadline for clarity
+	graceUntil := materialChangedAt.Add(72 * time.Hour).UTC().Format("Mon, 02 Jan 2006 15:04 UTC")
+
+	err = tmpl.Execute(&body, map[string]string{
+		"Name":            name,
+		"EventName":       eventName,
+		"ChangedFields":   changedList.String(),
+		"MaterialChanged": materialChangedAt.UTC().Format("Mon, 02 Jan 2006 15:04 UTC"),
+		"GraceUntil":      graceUntil,
+	})
+	if err != nil {
+		return fmt.Errorf("mailer: execute template: %w", err)
+	}
+
+	return r.SendEmail(ctx, to, "Event updated — "+eventName, body.String())
 }

@@ -92,6 +92,7 @@ type Store struct {
 		ListByUser(ctx context.Context, userID string, limit, offset int) ([]PurchaseSummary, error)
 		CountByUser(ctx context.Context, userID string) (int, error)
 		SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error)
+		ListConfirmedBuyersByEvent(ctx context.Context, eventID string) ([]*User, error)
 		HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error)
 	}
 	Waitlist interface {

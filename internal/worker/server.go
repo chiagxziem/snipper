@@ -37,6 +37,9 @@ func NewServeMux(
 	// waitlist emails
 	mux.HandleFunc(TypeNotifyWaitlistEntry, HandleNotifyNextWaiting(s, m))
 
+	// buyer notifications
+	mux.HandleFunc(TypeNotifyBuyersUpdated, HandleNotifyBuyersUpdated(s, m, l))
+
 	return mux
 }
 

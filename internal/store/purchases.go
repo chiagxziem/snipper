@@ -115,6 +115,37 @@ func (s *PurchasesStore) CountByUser(ctx context.Context, userID string) (int, e
 	return count, nil
 }
 
+func (s *PurchasesStore) ListConfirmedBuyersByEvent(
+	ctx context.Context,
+	eventID string,
+) ([]*User, error) {
+	query := `
+		SELECT DISTINCT u.id, u.name, u.email, u.password_hash, u.email_verified,
+		u.image, u.role, u.created_at, u.updated_at
+		FROM purchases p
+		JOIN ticket_tiers t ON t.id = p.tier_id
+		JOIN users u ON u.id = p.user_id
+		WHERE t.event_id = $1 AND p.status = 'confirmed'
+		ORDER BY u.email ASC
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	rows, err := s.pool.Query(ctx, query, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list confirmed buyers by event: %w", err)
+	}
+	defer rows.Close()
+
+	buyers, err := pgx.CollectRows(rows, pgx.RowToAddrOf[User])
+	if err != nil {
+		return nil, fmt.Errorf("store: collect confirmed buyers by event: %w", err)
+	}
+
+	return buyers, nil
+}
+
 func (s *PurchasesStore) SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error) {
 	// COALESCE ensures 0 is returned if no sales has been made (SUM over zero rows is NULL)
 	query := `

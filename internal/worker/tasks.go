@@ -1,10 +1,11 @@
 package worker
 
 const (
-	TypeSendVerificationEmail  = "email:send_verification"
-	TypeSendPasswordResetEmail = "email:send_password_reset"
+	TypeSendVerificationEmail  = "auth:send_verification"
+	TypeSendPasswordResetEmail = "auth:send_password_reset"
+	TypeNotifyWaitlistEntry    = "waitlist:notify"
+	TypeNotifyBuyersUpdated    = "event:notify_buyers_updated"
 
-	TypeNotifyWaitlistEntry        = "waitlist:notify"
 	TypeEndExpiredEvents           = "events:end_expired"
 	TypeExpireWaitlistReservations = "waitlist:expire"
 )
