@@ -33,7 +33,7 @@ func HandleNotifyNextWaiting(s store.Store, m mailer.Mailer) asynq.HandlerFunc {
 		}
 
 		// set notified
-		waitlistEntry, user, tierName, eventname, err := s.Waitlist.NotifyNextWaiting(ctx, p.TierID)
+		waitlistEntry, user, tierName, eventName, err := s.Waitlist.NotifyNextWaiting(ctx, p.TierID)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return fmt.Errorf(
@@ -53,7 +53,7 @@ func HandleNotifyNextWaiting(s store.Store, m mailer.Mailer) asynq.HandlerFunc {
 			ctx,
 			[]string{user.Email},
 			user.Name,
-			tierName, eventname,
+			tierName, eventName,
 			*waitlistEntry.ExpiresAt,
 		)
 		if err != nil {

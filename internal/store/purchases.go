@@ -330,14 +330,19 @@ func (s *PurchasesStore) Create(
 	return nil
 }
 
-func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purchase, error) {
+func (s *PurchasesStore) Cancel(
+	ctx context.Context,
+	id, userID string,
+) (*Purchase, bool, error) {
+	wasSoldOut := false
+
 	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
 	defer cancel()
 
 	// init tx
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: begin tx: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -355,20 +360,20 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("store: cancel purchase: %w", ErrNotFound)
+			return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: %w", ErrNotFound)
 		}
-		return nil, fmt.Errorf("store: cancel purchase: lock purchase: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: lock purchase: %w", err)
 	}
 	// if purchase is already cancelled, return error
 	if purchase.Status != "confirmed" {
-		return nil, fmt.Errorf("store: cancel purchase: %w", ErrAlreadyCancelled)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: %w", ErrAlreadyCancelled)
 	}
 
 	// load the tier + event rules
 	const loadEventAndTierRules = `
-    SELECT t.event_id, t.remaining, e.status, e.starts_at,
-           e.cancellation_allowed, e.cancellation_hours_before,
-           e.material_changed_at
+    SELECT t.event_id, t.status, t.remaining, 
+      e.status, e.starts_at, e.cancellation_allowed, 
+      e.cancellation_hours_before, e.material_changed_at
     FROM ticket_tiers t JOIN events e ON e.id = t.event_id
     WHERE t.id = $1
   `
@@ -378,15 +383,21 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	var cancellationAllowed bool
 	var startsAt time.Time
 	var materialChangedAt *time.Time
+	var tierStatus string
 	err = tx.QueryRow(ctx, loadEventAndTierRules, purchase.TierID).Scan(
-		&eventID, &remaining, &eventStatus, &startsAt,
+		&eventID, &tierStatus, &remaining, &eventStatus, &startsAt,
 		&cancellationAllowed, &cancellationHoursBefore, &materialChangedAt,
 	)
 	// if the purchase that tierId is gotten from already exists,
 	// then the tier and the event definitely exists
 	// so no pgx.ErrNoRows error to check here
 	if err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: load tier + event rules: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: load tier + event rules: %w", err)
+	}
+
+	// record sold out state
+	if tierStatus == "sold_out" {
+		wasSoldOut = true
 	}
 
 	// policy checks. hard gates first: once the event has started it's over
@@ -395,9 +406,9 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	now := time.Now()
 	switch {
 	case !now.Before(startsAt):
-		return nil, fmt.Errorf("store: cancel purchase: %w", ErrEventStarted)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: %w", ErrEventStarted)
 	case !cancellationAllowed:
-		return nil, fmt.Errorf("store: cancel purchase: %w", ErrCancellationNotAllowed)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: %w", ErrCancellationNotAllowed)
 	}
 
 	// two ways to be inside a valid cancellation window:
@@ -408,7 +419,7 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 	graceOpen := materialChangedAt != nil &&
 		now.Before(materialChangedAt.Add(materialChangeGracePeriod))
 	if windowClosed && !graceOpen {
-		return nil, fmt.Errorf("store: cancel purchase: %w", ErrOutsideCancellationWindow)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: %w", ErrOutsideCancellationWindow)
 	}
 
 	// flip purchase status from confirmed to cancelled
@@ -420,7 +431,7 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
 		&purchase.Status, &purchase.UpdatedAt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: flip purchase: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: flip purchase: %w", err)
 	}
 
 	// flip the purchase tickets
@@ -429,7 +440,7 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
     WHERE purchase_id = $1
   `
 	if _, err := tx.Exec(ctx, flipTickets, purchase.ID); err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: flip tickets: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: flip tickets: %w", err)
 	}
 
 	// restore ticket tier inventory
@@ -440,7 +451,7 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
   `
 	_, err = tx.Exec(ctx, restoreTierInventory, purchase.TierID, purchase.Quantity)
 	if err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: flip tier inventory: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: flip tier inventory: %w", err)
 	}
 
 	const flipEventStatus = `
@@ -448,19 +459,15 @@ func (s *PurchasesStore) Cancel(ctx context.Context, id, userID string) (*Purcha
     WHERE id = $1 AND status = 'sold_out'
   `
 	if _, err := tx.Exec(ctx, flipEventStatus, eventID); err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: flip event status: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: flip event status: %w", err)
 	}
-
-	// TODO (Phase 10/12): if this tier was sold_out, restored inventory
-	// should go to the queue — enqueue NotifyWaitlistEntry so the next
-	// 'waiting' entrant gets a 24h offer before stock goes back on general sale
 
 	// commit transaction
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("store: cancel purchase: commit: %w", err)
+		return nil, wasSoldOut, fmt.Errorf("store: cancel purchase: commit: %w", err)
 	}
 
-	return purchase, nil
+	return purchase, wasSoldOut, nil
 }
 
 func (s *PurchasesStore) HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error) {

@@ -12,6 +12,7 @@ import (
 	"github.com/goziemsunday/gater/internal/jsonutil"
 	"github.com/goziemsunday/gater/internal/qr"
 	"github.com/goziemsunday/gater/internal/store"
+	"github.com/goziemsunday/gater/internal/worker"
 )
 
 type CreatePurchasePayload struct {
@@ -223,7 +224,7 @@ func (a *application) cancelPurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	purchase, err := a.store.Purchases.Cancel(ctx, idParam, user.ID.String())
+	purchase, wasSoldOut, err := a.store.Purchases.Cancel(ctx, idParam, user.ID.String())
 	if err != nil {
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -241,6 +242,32 @@ func (a *application) cancelPurchase(w http.ResponseWriter, r *http.Request) {
 			jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		}
 		return
+	}
+
+	if wasSoldOut {
+		notifyEntryTask, err := worker.NewNotifyWaitlistEntryTask(purchase.TierID)
+		if err != nil {
+			logger.Error(
+				fmt.Sprintf("failed to create %s task", worker.TypeNotifyWaitlistEntry),
+				"error", err,
+				"tier_id", purchase.TierID,
+			)
+		} else {
+			taskInfo, err := a.worker.Enqueue(notifyEntryTask)
+			if err != nil {
+				logger.Error(
+					fmt.Sprintf("failed to enqueue %s task", worker.TypeNotifyWaitlistEntry),
+					"error", err,
+					"tier_id", purchase.TierID,
+				)
+			} else {
+				logger.Info(
+					fmt.Sprintf("enqueued %s task", worker.TypeNotifyWaitlistEntry),
+					"id", taskInfo.ID,
+					"queue", taskInfo.Queue,
+				)
+			}
+		}
 	}
 
 	tickets, err := a.store.Purchases.ListTicketsByPurchase(ctx, purchase.ID.String())

@@ -106,12 +106,13 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 				"error", err,
 				"username", user.Name,
 			)
+		} else {
+			logger.Info(
+				fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
+				"id", taskInfo.ID,
+				"queue", taskInfo.Queue,
+			)
 		}
-		logger.Info(
-			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
-			"id", taskInfo.ID,
-			"queue", taskInfo.Queue,
-		)
 	}
 
 	type returnData struct {
@@ -460,12 +461,13 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 				"error", err,
 				"username", user.Name,
 			)
+		} else {
+			logger.Info(
+				fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
+				"id", taskInfo.ID,
+				"queue", taskInfo.Queue,
+			)
 		}
-		logger.Info(
-			fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
-			"id", taskInfo.ID,
-			"queue", taskInfo.Queue,
-		)
 	}
 
 	jsonutil.WriteData(w, http.StatusOK, returnData{Message: successMsg})
@@ -578,12 +580,13 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 				"error", err,
 				"username", user.Name,
 			)
+		} else {
+			logger.Info(
+				fmt.Sprintf("enqueued %s task", worker.TypeSendPasswordResetEmail),
+				"id", taskInfo.ID,
+				"queue", taskInfo.Queue,
+			)
 		}
-		logger.Info(
-			fmt.Sprintf("enqueued %s task", worker.TypeSendPasswordResetEmail),
-			"id", taskInfo.ID,
-			"queue", taskInfo.Queue,
-		)
 	}
 
 	jsonutil.WriteData(w, http.StatusOK, returnData{Message: successMsg})
