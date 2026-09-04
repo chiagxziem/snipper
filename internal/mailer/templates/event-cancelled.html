@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event cancelled — {{ .EventName }}</title>
+  </head>
+  <body>
+    <h1>Event Cancellation</h1>
+    <p>Hi <strong>{{ .Name }}</strong>,</p>
+    <p>
+      The event <strong>{{ .EventName }}</strong> you have tickets for has
+      been cancelled by the organizer on
+      <strong>{{ .CancelledAt }}</strong>.
+    </p>
+    <p>
+      You will receive a full refund for your purchase. Refunds are processed
+      automatically and should arrive within 5–10 business days, depending on
+      your bank.
+    </p>
+    <div class="footer">
+      <p>We're sorry for the inconvenience.</p>
+    </div>
+  </body>
+</html>

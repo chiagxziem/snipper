@@ -150,3 +150,27 @@ func (r *resendClient) SendEventUpdatedNotification(
 
 	return r.SendEmail(ctx, to, "Event updated — "+eventName, body.String())
 }
+
+func (r *resendClient) SendEventCancelledNotification(
+	ctx context.Context,
+	to []string,
+	name, eventName string,
+	cancelledAt time.Time,
+) error {
+	tmpl, err := template.ParseFS(templates, "templates/event-cancelled.html")
+	if err != nil {
+		return fmt.Errorf("mailer: parse template: %w", err)
+	}
+
+	var body bytes.Buffer
+	err = tmpl.Execute(&body, map[string]string{
+		"Name":        name,
+		"EventName":   eventName,
+		"CancelledAt": cancelledAt.UTC().Format("Mon, 02 Jan 2006 15:04 UTC"),
+	})
+	if err != nil {
+		return fmt.Errorf("mailer: execute template: %w", err)
+	}
+
+	return r.SendEmail(ctx, to, "Event cancelled — "+eventName, body.String())
+}

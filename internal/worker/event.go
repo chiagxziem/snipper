@@ -20,6 +20,12 @@ type NotifyBuyersUpdatedPayload struct {
 	MaterialChangedAt time.Time         `json:"material_changed_at"`
 }
 
+type NotifyBuyersCancelledPayload struct {
+	EventID     uuid.UUID `json:"event_id"`
+	EventName   string    `json:"event_name"`
+	CancelledAt time.Time `json:"cancelled_at"`
+}
+
 func NewNotifyBuyersUpdatedTask(
 	eventID uuid.UUID,
 	eventName string,
@@ -73,6 +79,65 @@ func HandleNotifyBuyersUpdated(s store.Store, m mailer.Mailer, l *slog.Logger) a
 			}
 			l.Info(
 				"sent event updated notification",
+				"event_id", p.EventID,
+				"user_id", buyer.ID,
+			)
+		}
+
+		return nil
+	}
+}
+
+func NewNotifyBuyersCancelledTask(
+	eventID uuid.UUID,
+	eventName string,
+	cancelledAt time.Time,
+) (*asynq.Task, error) {
+	payload, err := json.Marshal(NotifyBuyersCancelledPayload{
+		EventID:     eventID,
+		EventName:   eventName,
+		CancelledAt: cancelledAt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("worker: notify buyers cancelled: marshal: %w", err)
+	}
+
+	return asynq.NewTask(TypeNotifyBuyersCancelled, payload), nil
+}
+
+func HandleNotifyBuyersCancelled(s store.Store, m mailer.Mailer, l *slog.Logger) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var p NotifyBuyersCancelledPayload
+		if err := json.Unmarshal(t.Payload(), &p); err != nil {
+			return fmt.Errorf("worker: handle notify buyers cancelled: unmarshal: %w", err)
+		}
+
+		// resolve affected buyers at execution time
+		buyers, err := s.Purchases.ListConfirmedBuyersByEvent(ctx, p.EventID.String())
+		if err != nil {
+			return fmt.Errorf("worker: handle notify buyers cancelled: list buyers: %w", err)
+		}
+
+		for _, buyer := range buyers {
+			err := m.SendEventCancelledNotification(
+				ctx,
+				[]string{buyer.Email},
+				buyer.Name,
+				p.EventName,
+				p.CancelledAt,
+			)
+			if err != nil {
+				l.Error(
+					"failed to send event cancelled notification",
+					"error", err,
+					"event_id", p.EventID,
+					"user_id", buyer.ID,
+					"email", buyer.Email,
+				)
+				continue
+			}
+			l.Info(
+				"sent event cancelled notification",
 				"event_id", p.EventID,
 				"user_id", buyer.ID,
 			)

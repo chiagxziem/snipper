@@ -384,14 +384,42 @@ func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO (Phase 9): trigger refunds/grace-period cancellations for confirmed purchases
-	// TODO (Phase 12): enqueue buyer notification that the event was cancelled
+	// TODO: trigger refunds for confirmed purchases (blocked on payments
+	// integration — no money moves yet, so there is nothing to refund)
+	// TODO: flip confirmed purchases to cancelled when their event is
+	// cancelled, so buyer history reflects reality instead of showing live
+	// tickets for a dead event
 
 	event, err := a.store.Events.Cancel(ctx, event.ID.String())
 	if err != nil {
 		logger.Error("failed to cancel event", "error", err, "event_id", event.ID)
 		jsonutil.WriteError(w, http.StatusInternalServerError, "something went wrong")
 		return
+	}
+
+	// send out buyer notifications for the event cancellation
+	task, err := worker.NewNotifyBuyersCancelledTask(event.ID, event.Name, event.UpdatedAt)
+	if err != nil {
+		logger.Error(
+			fmt.Sprintf("failed to create %s task", worker.TypeNotifyBuyersCancelled),
+			"error", err,
+			"event_id", event.ID,
+		)
+	} else {
+		taskInfo, err := a.worker.Enqueue(task)
+		if err != nil {
+			logger.Error(
+				fmt.Sprintf("failed to enqueue %s task", worker.TypeNotifyBuyersCancelled),
+				"error", err,
+				"event_id", event.ID,
+			)
+		} else {
+			logger.Info(
+				fmt.Sprintf("enqueued %s task", worker.TypeNotifyBuyersCancelled),
+				"queue", taskInfo.Queue,
+				"event_id", event.ID,
+			)
+		}
 	}
 
 	type returnData struct {

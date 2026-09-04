@@ -87,11 +87,7 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendVerificationTask, err := worker.NewSendVerificationTask(
-		[]string{user.Email},
-		user.Name,
-		token.Plaintext,
-	)
+	task, err := worker.NewSendVerificationTask([]string{user.Email}, user.Name, token.Plaintext)
 	if err != nil {
 		logger.Error(
 			fmt.Sprintf("failed to create %s task", worker.TypeSendVerificationEmail),
@@ -99,7 +95,7 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 			"username", user.Name,
 		)
 	} else {
-		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
+		taskInfo, err := a.worker.Enqueue(task)
 		if err != nil {
 			logger.Error(
 				fmt.Sprintf("failed to enqueue %s task", worker.TypeSendVerificationEmail),
@@ -109,8 +105,8 @@ func (a *application) registerUser(w http.ResponseWriter, r *http.Request) {
 		} else {
 			logger.Info(
 				fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
-				"id", taskInfo.ID,
 				"queue", taskInfo.Queue,
+				"username", user.Name,
 			)
 		}
 	}
@@ -449,7 +445,7 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 	)
 	if err != nil {
 		logger.Error(
-			"failed to create 'send verification email' task",
+			fmt.Sprintf("failed to create %s task", worker.TypeSendVerificationEmail),
 			"error", err,
 			"username", user.Name,
 		)
@@ -457,15 +453,15 @@ func (a *application) resendVerificationEmail(w http.ResponseWriter, r *http.Req
 		taskInfo, err := a.worker.Enqueue(sendVerificationTask)
 		if err != nil {
 			logger.Error(
-				"failed to enqueue 'send verification email' task",
+				fmt.Sprintf("failed to enqueue %s task", worker.TypeSendVerificationEmail),
 				"error", err,
 				"username", user.Name,
 			)
 		} else {
 			logger.Info(
 				fmt.Sprintf("enqueued %s task", worker.TypeSendVerificationEmail),
-				"id", taskInfo.ID,
 				"queue", taskInfo.Queue,
+				"username", user.Name,
 			)
 		}
 	}
@@ -583,8 +579,8 @@ func (a *application) forgotPassword(w http.ResponseWriter, r *http.Request) {
 		} else {
 			logger.Info(
 				fmt.Sprintf("enqueued %s task", worker.TypeSendPasswordResetEmail),
-				"id", taskInfo.ID,
 				"queue", taskInfo.Queue,
+				"username", user.Name,
 			)
 		}
 	}
