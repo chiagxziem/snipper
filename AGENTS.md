@@ -21,7 +21,7 @@ No tests, no linter, no formatter config.
 `cmd/server/` — `package main`, HTTP handlers, chi routing, middleware.  
 `internal/` — `config/` (godotenv), `db/` (pgxpool), `store/` (raw SQL via pgx, 5s per-query timeout; `users`, `sessions`, `verifications`, `oauth`, `events`, `tiers`, `purchases`, `waitlist`, `tickets`), `auth/` (argon2id, SHA-256 tokens), `jsonutil/`, `validator/` (go-playground), `mailer/` (Resend), `qr/` (HMAC-SHA256 ticket tokens).  
 `cmd/migrate/` — goose runner with embedded SQL.  
-`internal/cache/redis.go` exists but is **not wired into the app**.
+`internal/cache/redis.go` is the Redis factory, wired in `main.go` → shared `*redis.Client` reused by Asynq client/server/scheduler (`internal/worker/client.go`, `server.go`); `internal/worker/` holds email + waitlist + periodic handlers.
 
 Handlers manually wired into `application` struct in `main.go` — no DI framework.
 
@@ -36,8 +36,8 @@ Handlers manually wired into `application` struct in `main.go` — no DI framewo
 - **Password** `json:"-"` — never serialized to JSON. `internal/store/` uses raw SQL; `PurchasesStore.Create`, `PurchasesStore.Cancel`, and `TicketsStore.CheckIn` are the only transactions so far (`pool.Begin` + deferred rollback inside one store method — handlers never see `pgx.Tx`).
 - **Check-in:** event-scoped `POST /api/events/{id}/checkin` (inside `requireEventOrganizer` — wrong-event detection uses `eventCtx`; deviation from PLAN's flat `/api/checkin`). Single tx with `SELECT FOR UPDATE OF t` (scoped to the ticket row only). Responses are always-200 `{"data": {"valid": ...}}` (Option A) — domain outcomes (`invalid token`, `already checked in`, `ticket cancelled`, `wrong event`) return `{"valid": false, "reason": ...}`; only malformed JSON hits the standard `{"errors": [...]}` envelope.
 - **Purchases:** buying requires event `published` + tier `available` (authoritative inside the tx); `total` is computed from the locked tier price, never trusted from the client. Purchase history is offset-paginated (`page`/`limit`/`total`) — an archive reads better in pages than the cursor-style events feed. Cancellation policy: rejects once the event started or ended, honours `cancellation_hours_before` plus the 72h material-change grace window, allows cancelling against an already-cancelled event, restores inventory and reopens sold_out events.
-- **Waitlist:** sold-out tiers only (`409` otherwise); one entry per user per tier via `UNIQUE(user_id, tier_id)` — duplicates and expired entries 409 until Phase 12 adds conditional rejoin; leaving is a hard pair-scoped DELETE (no event/tier fetches needed — mismatches all collapse into one 404); organizer view is FIFO with buyer identity. Promotion-on-cancellation is a TODO in `PurchasesStore.Cancel` (Phase 10/12).
-- **Background email** uses `context.Background()`, errors only logged.
+- **Waitlist:** sold-out tiers only (`409` otherwise); one entry per user per tier via `UNIQUE(user_id, tier_id)` — duplicates and expired entries 409 until Phase 12 adds conditional rejoin; leaving is a hard pair-scoped DELETE (no event/tier fetches needed — mismatches all collapse into one 404); organizer view is FIFO with buyer identity. Promotion-on-cancellation is enqueued in `cancelPurchase` handler → `worker.NotifyNextWaiting` when `wasSoldOut` (gated before restore).
+- **Background email** via Asynq single default queue: `worker.TypeSendVerificationEmail` / `TypeSendPasswordResetEmail` and `TypeNotifyBuyersUpdated` / `TypeNotifyBuyersCancelled` + `worker.TypeNotifyWaitlistEntry` (all fan-out per-buyer via lookup pattern, log-and-continue, `SkipRetry` on empty queue); `mailer.SendWaitlistNotification` + `SendEvent*Notification` (+ `templates/event-*.html`); periodic `HandleEndExpiredEvents` / `HandleExpireWaitlistReservations` (`@every 5m` via Scheduler).
 - **Tier payloads:** `price`/`quantity` are pointers on create (omitted ≠ 0); update payloads are pointer-based so omitted fields stay unchanged.
 - **Tier updates:** `name`/`price` editable anytime (purchase totals are stored per purchase); `quantity` must stay `>= sold` (422) with `remaining` recomputed; capacity check nets out the tier's old quantity; tier `sold_out → available` and event `sold_out → published` flips on quantity increase; delete is draft-only; cancelled/ended events freeze all tier edits (409).
 
@@ -84,4 +84,4 @@ POST   /api/events/{id}/checkin                  (organizer; event-scoped, alway
 
 ## Known quirks
 
-- `internal/cache/redis.go` imports redis client but nothing in the app uses it.
+- None currently. Redis is now wired via Asynq client/server/scheduler using `internal/cache/redis.go`.

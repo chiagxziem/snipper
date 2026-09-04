@@ -582,7 +582,7 @@ gater/
 │   │   ├── token.go         -- secure token generation + hashing
 │   │   └── oauth.go         -- OAuth state generation helper
 │   ├── cache/
-│   │   └── redis.go         -- Redis client (not yet wired)
+│   │   └── redis.go         -- Redis factory (wired in main.go → worker client/server/scheduler via Asynq)
 │   ├── config/
 │   │   └── config.go        -- env vars loaded into Config struct, fail fast
 │   ├── db/
@@ -631,7 +631,7 @@ type application struct {
 }
 ```
 
-Cache (`cache.Cache`) will be added when Redis is wired in.
+Redis is wired: `cache.NewRedisClient` builds the shared `*redis.Client` (`main.go`) reused by `asynq.Client/Server/Scheduler` (`worker/client.go`, `server.go`); `application` holds `worker *asynq.Client` for handler enqueues.
 
 ### `justfile`
 
@@ -672,7 +672,7 @@ github.com/joho/godotenv              -- .env loading
 github.com/google/uuid                -- UUID generation
 golang.org/x/crypto                   -- Argon2id password hashing
 golang.org/x/oauth2                   -- Google OAuth
-github.com/hibiken/asynq              -- background job queue (planned)
+github.com/hibiken/asynq              -- background job queue
 ```
 
 **Dev tools (installed globally, not in go.mod):**
@@ -840,7 +840,7 @@ volumes:
 
 - Implement `joinWaitlist` (visibility + ended gates, sold-out-only, no-tickets check, unique-entry 409), `leaveWaitlist` (hard delete via pair-scoped DELETE), `getWaitlist` (organizer FIFO view with buyer identity + offer timestamps)
 - Waitlist entry validation — user must not already have a ticket for the tier
-- Promotion-on-cancellation deferred to Phase 12: TODO hook sits in `PurchasesStore.Cancel`; strict rejoin upgrade ships with the expiry worker
+- Promotion-on-cancellation: enqueued in `cancelPurchase` handler → `worker.NotifyNextWaiting` when `wasSoldOut` (gated before restore); `ExpireReservations` periodic re-enqueues per expired tier
 
 ### Phase 11 — Check-in ✅
 
@@ -848,9 +848,9 @@ volumes:
 - Fat tx `TicketsStore.CheckIn` (`FOR UPDATE OF t`, scoped lock) prevents duplicate check-ins; gates inside tx: `used` → `already checked in`, `cancelled` → `ticket cancelled`, tier's event vs door's event → `wrong event`
 - Ticket moves to tickets.go (`TicketsStore` + `Ticket` + `TicketCheckIn`); `Tickets` interface wired in `Store`
 
-### Phase 12 — Background Jobs (Asynq)
+### Phase 12 — Background Jobs (Asynq) ✅
 
-- Set up Asynq client and server in `internal/worker/`
+- Set up Asynq client, server, and scheduler in `internal/worker/` (shared `*redis.Client` via `cache.NewRedisClient`; `NewClient/Server/SchedulerFromRedisClient`)
 - Implement `EndExpiredEvents` scheduled job — runs every 5 minutes
 - Implement `ExpireWaitlistReservations` scheduled job — runs every 5 minutes
 - Implement `NotifyWaitlistEntry` triggered job — enqueued on purchase cancellation
