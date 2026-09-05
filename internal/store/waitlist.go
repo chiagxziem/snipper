@@ -245,3 +245,21 @@ func (s *WaitlistStore) NotifyNextWaiting(
 
 	return waitlistEntry, user, tierName, eventName, nil
 }
+
+func (s *WaitlistStore) DeleteByEvent(ctx context.Context, eventID string) error {
+	query := `
+		DELETE FROM waitlist_entries
+		WHERE tier_id IN (
+			SELECT id FROM ticket_tiers WHERE event_id = $1
+		)
+	`
+
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	if _, err := s.pool.Exec(ctx, query, eventID); err != nil {
+		return fmt.Errorf("store: delete waitlist by event: %w", err)
+	}
+
+	return nil
+}

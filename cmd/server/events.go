@@ -386,9 +386,6 @@ func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: trigger refunds for confirmed purchases (blocked on payments
 	// integration — no money moves yet, so there is nothing to refund)
-	// TODO: flip confirmed purchases to cancelled when their event is
-	// cancelled, so buyer history reflects reality instead of showing live
-	// tickets for a dead event
 
 	event, err := a.store.Events.Cancel(ctx, event.ID.String())
 	if err != nil {
@@ -397,8 +394,31 @@ func (a *application) cancelEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// send out buyer notifications for the event cancellation
-	task, err := worker.NewNotifyBuyersCancelledTask(event.ID, event.Name, event.UpdatedAt)
+	// snapshot confirmed buyers before flipping them to 'cancelled'; the
+	// worker must not re-query after the flip, or it would see zero rows
+	buyers, err := a.store.Purchases.ListConfirmedBuyersByEvent(ctx, event.ID.String())
+	if err != nil {
+		logger.Error("failed to list confirmed buyers", "error", err, "event_id", event.ID)
+		buyers = nil
+	}
+
+	// NOTE: synchronous bulk update. this is fine for low purchase volume; for 10k+
+	// rows switch to a worker job or batched UPDATE with LIMIT/OFFSET + SKIP LOCKED.
+	if err := a.store.Purchases.CancelByEvent(ctx, event.ID.String()); err != nil {
+		logger.Error("failed to cancel purchases for event", "error", err, "event_id", event.ID)
+	}
+	// hard-delete waitlist entries for a dead event
+	if err := a.store.Waitlist.DeleteByEvent(ctx, event.ID.String()); err != nil {
+		logger.Error("failed to clear waitlist for event", "error", err, "event_id", event.ID)
+	}
+
+	// send out buyer notifications for the cancellation
+	task, err := worker.NewNotifyBuyersCancelledTask(
+		event.ID,
+		event.Name,
+		event.UpdatedAt,
+		buyers,
+	)
 	if err != nil {
 		logger.Error(
 			fmt.Sprintf("failed to create %s task", worker.TypeNotifyBuyersCancelled),

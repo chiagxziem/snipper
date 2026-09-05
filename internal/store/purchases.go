@@ -501,6 +501,53 @@ func (s *PurchasesStore) Cancel(
 	return purchase, wasSoldOut, nil
 }
 
+func (s *PurchasesStore) CancelByEvent(ctx context.Context, eventID string) error {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: cancel by event: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// flip confirmed purchases for this event
+	const flipPurchases = `
+		UPDATE purchases p
+		SET status = 'cancelled'
+		FROM ticket_tiers t
+		WHERE t.id = p.tier_id
+		  AND t.event_id = $1
+		  AND p.status = 'confirmed'
+	`
+	if _, err := tx.Exec(ctx, flipPurchases, eventID); err != nil {
+		return fmt.Errorf("store: cancel by event: flip purchases: %w", err)
+	}
+
+	// flip tickets whose purchases were just cancelled
+	// (or were already cancelled)
+	// using a sub-select keeps it single-statement and
+	// idempotent if this runs twice
+	const flipTickets = `
+		UPDATE tickets SET status = 'cancelled'
+		WHERE purchase_id IN (
+			SELECT p.id FROM purchases p
+			JOIN ticket_tiers t ON t.id = p.tier_id
+			WHERE t.event_id = $1
+		)
+		AND status != 'cancelled'
+	`
+	if _, err := tx.Exec(ctx, flipTickets, eventID); err != nil {
+		return fmt.Errorf("store: cancel by event: flip tickets: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: cancel by event: commit: %w", err)
+	}
+
+	return nil
+}
+
 func (s *PurchasesStore) HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error) {
 	query := `
 		SELECT EXISTS (

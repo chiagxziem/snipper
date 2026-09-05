@@ -94,6 +94,7 @@ type Store struct {
 		SumConfirmedQuantityByEvent(ctx context.Context, eventID string) (int, error)
 		ListConfirmedBuyersByEvent(ctx context.Context, eventID string) ([]*User, error)
 		HasConfirmedPurchase(ctx context.Context, userID, tierID string) (bool, error)
+		CancelByEvent(ctx context.Context, eventID string) error
 	}
 	Waitlist interface {
 		Create(ctx context.Context, entry *WaitlistEntry) error
@@ -103,6 +104,7 @@ type Store struct {
 		NotifyNextWaiting(ctx context.Context, tierID uuid.UUID) (
 			*WaitlistEntry, *User, string, string, error,
 		)
+		DeleteByEvent(ctx context.Context, eventID string) error
 	}
 	Tickets interface {
 		CheckIn(ctx context.Context, ticketID, eventID uuid.UUID) (*TicketCheckIn, error)

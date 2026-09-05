@@ -855,6 +855,7 @@ volumes:
 - Implement `ExpireWaitlistReservations` scheduled job — runs every 5 minutes
 - Implement `NotifyWaitlistEntry` triggered job — enqueued on purchase cancellation
 - Wire worker server startup alongside HTTP server in `main.go`
+- Buyer notifications: `NotifyBuyersUpdated` (fan-out per-buyer on confirmed material changes, grace window) and `NotifyBuyersCancelled` (refund promise, snapshot buyers before flip to avoid race)
 
 ### Phase 13 — Analytics
 

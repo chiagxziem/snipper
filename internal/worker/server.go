@@ -39,7 +39,7 @@ func NewServeMux(
 
 	// buyer notifications
 	mux.HandleFunc(TypeNotifyBuyersUpdated, HandleNotifyBuyersUpdated(s, m, l))
-	mux.HandleFunc(TypeNotifyBuyersCancelled, HandleNotifyBuyersCancelled(s, m, l))
+	mux.HandleFunc(TypeNotifyBuyersCancelled, HandleNotifyBuyersCancelled(m, l))
 
 	return mux
 }
